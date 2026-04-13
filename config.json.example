@@ -1,0 +1,28 @@
+{
+  "packName": "Gorgeous Content Pack",
+  "packType": "content",
+  "installPath": "Content",
+  "availableVersions": [
+    {
+      "version": "5.4",
+      "path": "packs/5.4/content",
+      "checksum": ""
+    },
+    {
+      "version": "5.3",
+      "path": "packs/5.3/content",
+      "checksum": ""
+    },
+    {
+      "version": "5.2",
+      "path": "packs/5.2/content",
+      "checksum": ""
+    },
+    {
+      "version": "4.27",
+      "path": "packs/4.27/content",
+      "checksum": ""
+    }
+  ],
+  "metadataPath": "metadata.json"
+}
