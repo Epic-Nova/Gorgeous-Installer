@@ -1,0 +1,17 @@
+{
+  "RT_GROUP_ICON": {
+    "#1": "icon.png"
+  },
+  "RT_VERSION": {
+    "#1": {
+      "CompanyName": "Gorgeous Core",
+      "FileDescription": "Unreal Engine Plugin Installer",
+      "FileVersion": "1.0.0.0",
+      "InternalName": "gorgeous-installer",
+      "LegalCopyright": "2026",
+      "OriginalFilename": "gorgeous-installer.exe",
+      "ProductName": "Gorgeous Installer",
+      "ProductVersion": "1.0.0.0"
+    }
+  }
+}

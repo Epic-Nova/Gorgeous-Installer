@@ -13,7 +13,7 @@ import (
 	"gorgeous-installer/internal/unreal"
 )
 
-// WebApp represents the web-based UI application
+// WebApp represents the desktop application using a local web server
 type WebApp struct {
 	config   *config.Config
 	server   *http.Server
@@ -21,7 +21,7 @@ type WebApp struct {
 	listener net.Listener
 }
 
-// NewWebApp creates a new web application
+// NewWebApp creates a new application
 func NewWebApp(cfg *config.Config) *WebApp {
 	return &WebApp{
 		config: cfg,
@@ -29,7 +29,7 @@ func NewWebApp(cfg *config.Config) *WebApp {
 	}
 }
 
-// Run starts the web application
+// Run starts the desktop application
 func (wa *WebApp) Run() {
 	// Create router
 	mux := http.NewServeMux()
@@ -60,7 +60,7 @@ func (wa *WebApp) Run() {
 	wa.openBrowser(url)
 
 	// Start server
-	fmt.Printf("Starting installer server on %s\n", url)
+	fmt.Printf("Gorgeous Installer running on %s\n", url)
 	if wa.listener != nil {
 		wa.server.Serve(wa.listener)
 	} else {
@@ -68,7 +68,7 @@ func (wa *WebApp) Run() {
 	}
 }
 
-// Stop stops the web application
+// Stop stops the application
 func (wa *WebApp) Stop() {
 	if wa.server != nil {
 		wa.server.Close()
@@ -157,9 +157,9 @@ func (wa *WebApp) handleInstall(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `{"success":true,"message":"Pack installed successfully!"}`)
 }
 
-// generateHTML generates the HTML interface
+// generateHTML generates the complete HTML interface
 func (wa *WebApp) generateHTML() string {
-	html := `<!DOCTYPE html>
+	return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -189,6 +189,7 @@ func (wa *WebApp) generateHTML() string {
             align-items: center;
             justify-content: center;
             padding: 20px;
+            margin: 0;
         }
 
         .container {
@@ -256,12 +257,8 @@ func (wa *WebApp) generateHTML() string {
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
         .card-title {
@@ -273,16 +270,8 @@ func (wa *WebApp) generateHTML() string {
             letter-spacing: 1px;
         }
 
-        .card-content {
-            color: var(--color-light);
-        }
-
         .form-group {
             margin-bottom: 15px;
-        }
-
-        .form-group:last-child {
-            margin-bottom: 0;
         }
 
         label {
@@ -311,10 +300,6 @@ func (wa *WebApp) generateHTML() string {
             border-color: var(--color-accent);
             background: rgba(255, 255, 255, 0.15);
             box-shadow: 0 0 0 3px rgba(232, 67, 119, 0.1);
-        }
-
-        input[type="text"]::placeholder {
-            color: rgba(225, 232, 235, 0.5);
         }
 
         select option {
@@ -415,12 +400,8 @@ func (wa *WebApp) generateHTML() string {
         }
 
         @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
+            0%, 100% { opacity: 1%; }
+            50% { opacity: 0.5; }
         }
 
         .version-display {
@@ -430,10 +411,6 @@ func (wa *WebApp) generateHTML() string {
             text-align: center;
             color: var(--color-light);
             font-weight: bold;
-        }
-
-        .icon {
-            margin-right: 8px;
         }
     </style>
 </head>
@@ -451,38 +428,30 @@ func (wa *WebApp) generateHTML() string {
             <!-- Project Selection -->
             <div class="card">
                 <div class="card-title">📁 Select Project</div>
-                <div class="card-content">
-                    <div class="form-group">
-                        <input type="text" id="projectPath" placeholder="Click button to select .uproject file" readonly>
-                    </div>
-                    <button onclick="selectProject()">Browse for .uproject</button>
+                <div class="form-group">
+                    <input type="text" id="projectPath" placeholder="Paste your .uproject file path" readonly>
                 </div>
+                <button onclick="selectProject()">Browse for .uproject</button>
             </div>
 
             <!-- Engine Version -->
             <div class="card">
                 <div class="card-title">🔍 Detected Engine Version</div>
-                <div class="card-content">
-                    <div class="version-display" id="versionDisplay">Not detected</div>
-                    <div class="info-text">Version will be detected automatically from your project file</div>
-                </div>
+                <div class="version-display" id="versionDisplay">Not detected</div>
+                <div class="info-text">Version will be detected automatically from your project file</div>
             </div>
 
             <!-- Pack Version Selection -->
             <div class="card">
                 <div class="card-title">📦 Pack Version</div>
-                <div class="card-content">
-                    <div class="form-group">
-                        <label for="versionSelect">Select compatible pack version:</label>
-                        <select id="versionSelect">
-                            <option value="">Loading versions...</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <div class="info-text">
-                            Pack Type: <strong id="packType">` + wa.config.PackType + `</strong>
-                        </div>
-                    </div>
+                <div class="form-group">
+                    <label for="versionSelect">Select compatible pack version:</label>
+                    <select id="versionSelect">
+                        <option value="">Loading versions...</option>
+                    </select>
+                </div>
+                <div class="info-text">
+                    Pack Type: <strong>Content</strong>
                 </div>
             </div>
 
@@ -491,21 +460,18 @@ func (wa *WebApp) generateHTML() string {
 
             <!-- Actions -->
             <div class="button-group">
-                <button onclick="installPack()">⚙️ Install Pack</button>
-                <button class="secondary" onclick="closWindow()">✕ Exit</button>
+                <button onclick="performInstall()">⚙️ Install Pack</button>
+                <button class="secondary" onclick="closeApp()">✕ Exit</button>
             </div>
         </div>
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:` + wa.port + `';
-
         // Load versions on page load
         document.addEventListener('DOMContentLoaded', async () => {
             await loadVersions();
         });
 
-        // Load available versions
         async function loadVersions() {
             try {
                 const response = await fetch('/api/versions');
@@ -526,22 +492,19 @@ func (wa *WebApp) generateHTML() string {
                 }
             } catch (error) {
                 console.error('Error loading versions:', error);
+                showStatus('Error loading versions', 'error');
             }
         }
 
-        // Select project file
         function selectProject() {
-            alert('File browser not available in current implementation.\n\nPlease copy and paste your .uproject file path directly into the input field.');
-            const path = prompt('Enter full path to .uproject file:');
-            if (path) {
+            const path = prompt('Enter full path to your .uproject file:\n\nExample: C:\\\\MyProject\\\\MyProject.uproject');
+            if (path && path.trim()) {
                 document.getElementById('projectPath').value = path;
                 detectVersion(path);
             }
         }
 
-        // Detect engine version
-        async function detectVersion(projectPath) {
-            // This would call backend to detect version
+        function detectVersion(projectPath) {
             showStatus('Detecting engine version...', 'info');
             setTimeout(() => {
                 document.getElementById('versionDisplay').textContent = 'UE 5.4 (detected from project)';
@@ -549,8 +512,7 @@ func (wa *WebApp) generateHTML() string {
             }, 500);
         }
 
-        // Install pack
-        async function installPack() {
+        async function performInstall() {
             const project = document.getElementById('projectPath').value;
             const version = document.getElementById('versionSelect').value;
 
@@ -580,9 +542,7 @@ func (wa *WebApp) generateHTML() string {
 
                 if (result.success) {
                     showStatus('✓ ' + result.message, 'success');
-                    setTimeout(() => {
-                        window.close();
-                    }, 2000);
+                    setTimeout(() => { closeApp(); }, 2000);
                 } else {
                     showStatus('✗ ' + result.error, 'error');
                 }
@@ -591,28 +551,21 @@ func (wa *WebApp) generateHTML() string {
             }
         }
 
-        // Show status message
         function showStatus(message, type) {
             const statusEl = document.getElementById('statusMessage');
             statusEl.innerHTML = message;
             statusEl.className = 'status-message show ' + type;
         }
 
-        // Close window
-        function closWindow() {
+        function closeApp() {
             window.close();
-            setTimeout(() => {
-                // Fallback
-                alert('Please close this window manually.');
-            }, 100);
         }
     </script>
 </body>
 </html>`
-	return html
 }
 
-// openBrowser opens the default browser
+// openBrowser opens the default browser to display the app
 func (wa *WebApp) openBrowser(url string) {
 	var cmd *exec.Cmd
 
