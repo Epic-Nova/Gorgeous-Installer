@@ -8,6 +8,7 @@ import (
 
 	"gorgeous-installer/internal/config"
 	"gorgeous-installer/internal/installer"
+	"gorgeous-installer/internal/ui"
 	"gorgeous-installer/internal/unreal"
 	// "gorgeous-installer/internal/ui" // GUI temporarily disabled
 
@@ -31,17 +32,8 @@ func main() {
 		// CLI installation mode
 		runCLIMode(cfg, *projectPath, *packType)
 	} else {
-		// GUI mode (temporarily disabled - use CLI mode)
-		fmt.Println("GUI mode is currently being enhanced. Please use CLI mode:")
-		fmt.Println("  gorgeous-installer.exe -cli -project \"C:\\path\\to\\project.uproject\"")
-		fmt.Println()
-		fmt.Println("Available pack versions:")
-		for _, pv := range cfg.AvailableVersions {
-			fmt.Printf("  - %s\n", pv.Version)
-		}
-		os.Exit(0)
-		// TODO: Uncomment when GUI dependencies are resolved
-		// runGUIMode(cfg)
+		// GUI mode - animated branded interface
+		runGUIMode(cfg)
 	}
 }
 
@@ -100,11 +92,10 @@ func runCLIMode(cfg *config.Config, projectPath, packType string) {
 	fmt.Println("Installation completed successfully!")
 }
 
-// GUI mode temporarily disabled - GUI will be added in future updates
-// func runGUIMode(cfg *config.Config) {
-// 	guiApp := ui.NewGUIApp(cfg)
-// 	guiApp.Run()
-// }
+func runGUIMode(cfg *config.Config) {
+	guiApp := ui.NewGUIApp(cfg)
+	guiApp.Run()
+}
 
 func selectOptimalPackVersion(cfg *config.Config, ueVersion string) *config.PackVersion {
 	var bestMatch *config.PackVersion

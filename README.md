@@ -4,7 +4,7 @@ A Go-based installer tool for distributing Unreal Engine plugin content and code
 
 ## Features
 
-- **Dual-Mode Operation**: GUI for interactive installation, CLI for automation
+- **Dual-Mode Operation**: Web-based GUI for interactive installation, CLI for automation
 - **Smart Version Matching**: Automatically selects compatible pack versions, preferring older versions when exact match unavailable
 - **Unreal Engine Detection**: Automatically detects UE version from .uproject files
 - **Plugin Location**: Finds Gorgeous plugin in project or engine directories
@@ -12,6 +12,7 @@ A Go-based installer tool for distributing Unreal Engine plugin content and code
 - **Registry Support**: Uses Windows registry to locate engine installations and source builds
 - **Content & Code Packs**: Supports both content (goes to Content/) and code (goes to Source/, auto-recompiles) packs
 - **Cross-Platform**: Works on Windows, macOS, and Linux
+- **Beautiful Web Interface**: Animated, rounded-corner UI styled to match Gorgeous Core branding
 
 ## Project Structure
 
@@ -32,7 +33,7 @@ gorgeous-installer/
 │   ├── installer/
 │   │   └── installer.go      # Installation logic
 │   └── ui/
-│       └── gui.go            # Fyne GUI implementation
+│       └── web.go            # Web-based GUI (HTML/CSS/JavaScript)
 ├── deployments/              # Where packaged content/code goes
 ├── config.json              # Installer configuration (embedded in exe)
 └── README.md
@@ -43,6 +44,7 @@ gorgeous-installer/
 - **Go 1.26.2** or later
 - **Windows registry access** (for engine location detection)
 - **Unreal Engine 4.27+** (target engine)
+- **A modern web browser** (for the GUI - Chrome, Firefox, Edge, Safari all supported)
 
 ## Building & Installation
 
@@ -114,7 +116,7 @@ go build -o gorgeous-installer.exe cmd/main/main.go
 
 ## Usage
 
-### GUI Mode
+### GUI Mode (Web Interface)
 
 Simply run the executable:
 
@@ -122,12 +124,24 @@ Simply run the executable:
 .\gorgeous-installer.exe
 ```
 
+This will:
+1. Start a local web server on `http://localhost:8765`
+2. Automatically open your default browser
+3. Display the beautifully styled Gorgeous Core interface
+
 **Workflow:**
-1. Click "Browse for .uproject" and select your UE project
-2. Installer auto-detects engine version from .uproject
+1. Copy and paste your `.uproject` file path (or use the browse button)
+2. Installer auto-detects engine version from the project
 3. Select desired pack version from dropdown
-4. Click "Install Pack"
-5. Monitor status and verify completion
+4. Click "⚙️ Install Pack" to begin installation
+5. Monitor status message for success/error feedback
+
+**Design Features:**
+- Animated UI with smooth transitions
+- Rounded corners throughout (20px container, 12px cards)
+- Gorgeous Core teal/pink color scheme
+- Responsive layout that works on any screen size
+- Real-time status updates during installation
 
 ### CLI Mode
 
