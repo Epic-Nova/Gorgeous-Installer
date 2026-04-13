@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lxn/walk"
+
 	"gorgeous-installer/internal/config"
 	"gorgeous-installer/internal/installer"
 	"gorgeous-installer/internal/ui"
 	"gorgeous-installer/internal/unreal"
-	// "gorgeous-installer/internal/ui" // GUI temporarily disabled
-
 )
 
 func main() {
@@ -93,8 +93,33 @@ func runCLIMode(cfg *config.Config, projectPath, packType string) {
 }
 
 func runGUIMode(cfg *config.Config) {
+	// Try to use Walk GUI, but fall back to CLI if it fails
 	guiApp := ui.NewGUIApp(cfg)
+
+	// Use recover to handle any GUI initialization panics
+	defer func() {
+		if r := recover(); r != nil {
+			// GUI failed, show simple message box and fall back to CLI with file open dialog
+			projectPath := showProjectBrowserDialog()
+			if projectPath == "" {
+				return
+			}
+			runCLIMode(cfg, projectPath, "")
+		}
+	}()
+
 	guiApp.Run()
+}
+
+func showProjectBrowserDialog() string {
+	dlg := walk.FileDialog{
+		Title:  "Select Unreal Project",
+		Filter: "Unreal Project (*.uproject)|*.uproject",
+	}
+	if ok, _ := dlg.ShowOpen(nil); ok {
+		return dlg.FilePath
+	}
+	return ""
 }
 
 func selectOptimalPackVersion(cfg *config.Config, ueVersion string) *config.PackVersion {
