@@ -1,319 +1,264 @@
-# Gorgeous Unreal Engine Plugin Installer
+# Gorgeous Installer
 
-A Go-based installer tool for distributing Unreal Engine plugin content and code packs. Supports both GUI and CLI modes, automatic engine version detection, and intelligent version matching.
+Gorgeous Installer is a native Go + Fyne application for installing content and code packs into an Unreal Engine plugin.
 
-## Features
+It supports both GUI and CLI workflows, resolves the engine from the selected .uproject, chooses a compatible pack version, installs files into the plugin, and (for code packs) compiles the plugin with Unreal build tooling.
 
-- **Dual-Mode Operation**: Web-based GUI for interactive installation, CLI for automation
-- **Smart Version Matching**: Automatically selects compatible pack versions, preferring older versions when exact match unavailable
-- **Unreal Engine Detection**: Automatically detects UE version from .uproject files
-- **Plugin Location**: Finds Gorgeous plugin in project or engine directories
-- **Source Build Support**: Handles source-built engines identified by `{SourcePath}` notation
-- **Registry Support**: Uses Windows registry to locate engine installations and source builds
-- **Content & Code Packs**: Supports both content (goes to Content/) and code (goes to Source/, auto-recompiles) packs
-- **Cross-Platform**: Works on Windows, macOS, and Linux
-- **Beautiful Web Interface**: Animated, rounded-corner UI styled to match Gorgeous Core branding
+## Current Capabilities
 
-## Project Structure
+- Native desktop GUI (Fyne) with:
+  - animated boot intro
+  - rounded native Windows window corners
+  - draggable custom top bar
+  - animated window-open transition
+- Engine detection from .uproject EngineAssociation
+- Launcher and source build engine path resolution
+- Automatic compatible pack version selection
+  - version selector is hidden by default
+  - selector appears only when engine detection fails
+- Content and code pack install modes
+- Automatic action detection before install:
+  - Install when files are not present yet
+  - Update when pack files already exist and differ
+  - Reinstall when pack files are already fully installed and unchanged
+- SHA validation support:
+  - startup validation for configured pack SHA manifests
+  - SHA files are excluded from install copy operations
+  - animated GUI SHA validation screen (engine-version dropdown + optional manifest file)
+  - CLI SHA validation mode with explicit version/engine selection
+- Colorized live build log in GUI:
+  - errors in red tones
+  - warnings in amber tones
+  - auto-scroll to newest output
+- Update analysis visibility:
+  - differing files are listed in the installer log
+  - update copies only changed files
+- Code-pack compile UX improvements:
+  - app window expands with animation for larger log reading space
+  - closing while compiling cancels the running compile process
+  - compile failures include manual .sln rebuild advice
+  - compile failure screen offers Back to Logs
+- CLI mode for automation and scripting
 
-```
-gorgeous-installer/
-├── cmd/
-│   ├── main/
-│   │   └── main.go           # GUI and CLI application entry point
-│   └── builder/
-│       └── main.go           # Tool to build installer packages
-├── internal/
-│   ├── config/
-│   │   └── config.go         # Configuration management
-│   ├── unreal/
-│   │   └── unreal.go         # UE-specific operations
-│   ├── registry/
-│   │   └── registry.go       # Engine registry lookups
-│   ├── installer/
-│   │   └── installer.go      # Installation logic
-│   └── ui/
-│       └── web.go            # Web-based GUI (HTML/CSS/JavaScript)
-├── deployments/              # Where packaged content/code goes
-├── config.json              # Installer configuration (embedded in exe)
-└── README.md
-```
+## Configuration
 
-## Prerequisites
+The installer reads config.json from embedded assets.
 
-- **Go 1.26.2** or later
-- **Windows registry access** (for engine location detection)
-- **Unreal Engine 4.27+** (target engine)
-- **A modern web browser** (for the GUI - Chrome, Firefox, Edge, Safari all supported)
-
-## Building & Installation
-
-### 1. Setup Development Environment
-
-```powershell
-# Install Go dependencies
-cd "h:\SimsalabimStudio\Applications\GorgeousInstaller"
-go mod tidy
-go mod download
-```
-
-### 2. Configure Your Pack
-
-Create or update `config.json` with your pack information:
+Example schema:
 
 ```json
 {
-  "packName": "My Gorgeous Pack",
-  "packType": "content",
+  "packName": "Gorgeous Content Pack",
+  "pluginName": "GorgeousCore",
+  "packType": "code",
   "installPath": "Content",
   "availableVersions": [
     {
-      "version": "5.4",
-      "path": "packs/5.4/content",
-      "checksum": ""
-    },
-    {
-      "version": "5.3",
-      "path": "packs/5.3/content",
+      "version": "5.7",
+      "path": "packs/5.7/content",
+      "shaFile": "packs/5.7/manifest.sha256",
       "checksum": ""
     }
   ]
 }
 ```
 
-**Pack Types:**
-- `content`: Files installed to `Plugins/Gorgeous/Content/`
-- `code`: Files installed to `Plugins/Gorgeous/Source/`, triggers plugin recompilation
+Fields:
 
-### 3. Build Configuration Tool
+- packName: human-readable pack name.
+- pluginName: target plugin name to locate via .uplugin.
+- packType: content or code.
+- installPath: path segment appended under plugin Content/ or Source/ roots.
+- shaFile: optional checksum manifest for this version (sha256sum format).
+- availableVersions: list of installable version payloads.
 
-Build the builder tool to create pre-configured installers:
+Important behavior:
 
-```powershell
-$env:PATH = "C:\Program Files\Go\bin;" + $env:PATH
+- content packs install under PLUGIN_PATH/Content + installPath.
+- code packs install under PLUGIN_PATH/Source + installPath.
+- for code installs, if installPath starts with Content, that root segment is stripped to avoid Source/Content nesting.
+- SHA manifest/control files are not copied into plugin destinations.
 
-# Build configuration for a content pack
-go run cmd/builder/main.go -pack "MyContentPack" -type content -path "C:\MyPacks\Content" -output . -version "5.4"
+## SHA Validation
 
-# For code packs
-go run cmd/builder/main.go -pack "MyCodePack" -type code -path "C:\MyPacks\Source" -output . -version "5.4"
+The installer can validate pack payloads using SHA manifests before installation.
+
+- Startup: configured shaFile manifests are validated against embedded pack files.
+- GUI: use Validate SHA to open the validator, select engine version from dropdown, optionally select a manifest, then validate.
+- CLI: use `-validate-sha` with `-version` (or `-engine-version`) and optional `-sha-file`.
+
+Manifest line format should follow sha256sum style, for example:
+
+```text
+<sha256>  relative/path/to/file.uasset
 ```
 
-### 4. Build the Installer Executable
+## Engine Detection and Path Resolution
 
-#### GUI Mode (Default)
+EngineAssociation from the selected .uproject is the source of truth.
+
+Resolution order includes:
+
+- direct path associations (including wrapped {path} forms)
+- Windows registry build maps and source build maps
+- installed-directory registry keys
+- standard install path fallbacks
+- Build.version semantic version fallback when association is not semantic
+
+## Plugin Discovery
+
+Plugin lookup order:
+
+1. Project plugin folder
+2. Engine Marketplace plugin folder
+3. Engine plugin folder
+
+Matching is done by .uplugin file name, using pluginName from config.
+
+## Code Pack Compile Strategy
+
+When packType is code, compilation attempts this order:
+
+1. UnrealBuildTool.dll via dotnet (first choice)
+2. UnrealBuildTool executable fallback
+3. RunUAT BuildPlugin fallback
+
+The first path is designed to match Unreal/MSBuild-style invocation patterns.
+
+## Build and Run
+
+Build using the workspace script:
+
 ```powershell
-$env:PATH = "C:\Program Files\Go\bin;" + $env:PATH
-go build -o gorgeous-installer.exe cmd/main/main.go
+.\build.ps1
 ```
 
-#### With Embedded Assets
-To bundle config.json and pack content:
+Build behavior:
+
+- Generates SHA manifests for every availableVersions path into availableVersions shaFile.
+- Missing/empty pack paths are warned and skipped by default.
+- Use `-StrictPackSHA` to fail the build if any configured version cannot be hashed.
+- Applies UPX compression automatically when UPX is installed.
+
+Build options:
+
+- `-SkipUPX` disables UPX compression.
+- `-UseUPX` requires UPX and fails if UPX is not installed.
+- `-TestSHAComparison` runs negative SHA tests with intentionally wrong manifests.
+- `-Sign -CertPath <pfx> [-CertPassword <pwd>]` signs the exe with signtool.
+
+UPX lookup notes:
+
+- The build script checks PATH first.
+- If not found in PATH, it also checks common WinGet install locations.
+
+Run SHA mismatch tests directly:
+
 ```powershell
-# Place config.json and pack content in same directory as exe
-go build -o gorgeous-installer.exe cmd/main/main.go
+.\test-sha-comparison.ps1
 ```
 
-## Usage
+Sign an already-built executable:
 
-### GUI Mode (Web Interface)
+```powershell
+.\sign-build-output.ps1 -CertPath "C:\Path\To\codesign.pfx" -CertPassword "<password>"
+```
 
-Simply run the executable:
+Artifacts generated in `build/`:
+
+- `gorgeous-installer.exe`
+- `gorgeous-installer.exe.sha256`
+- `gorgeous-installer.exe.sig`
+- `gorgeous-installer.build.json`
+
+Or build directly:
+
+```powershell
+go build ./...
+```
+
+Run GUI:
 
 ```powershell
 .\gorgeous-installer.exe
 ```
 
-This will:
-1. Start a local web server on `http://localhost:8765`
-2. Automatically open your default browser
-3. Display the beautifully styled Gorgeous Core interface
-
-**Workflow:**
-1. Copy and paste your `.uproject` file path (or use the browse button)
-2. Installer auto-detects engine version from the project
-3. Select desired pack version from dropdown
-4. Click "⚙️ Install Pack" to begin installation
-5. Monitor status message for success/error feedback
-
-**Design Features:**
-- Animated UI with smooth transitions
-- Rounded corners throughout (20px container, 12px cards)
-- Gorgeous Core teal/pink color scheme
-- Responsive layout that works on any screen size
-- Real-time status updates during installation
-
-### CLI Mode
+Run CLI:
 
 ```powershell
-.\gorgeous-installer.exe -cli -project "C:\MyProject\MyProject.uproject" -type content
+.\gorgeous-installer.exe -cli -project "C:\Path\To\Game.uproject"
 ```
 
-**CLI Arguments:**
-- `-cli`: Enable CLI mode (optional, defaults to GUI)
-- `-project`: Path to .uproject file or project directory (required in CLI)
-- `-type`: Pack type (optional, uses config.packType if not specified)
+Optional CLI flags:
 
-**CLI Output Example:**
-```
-Starting installation in CLI mode
-Project: C:\MyProject\MyProject.uproject
-Detected UE Version: 5.4
-Engine Path: C:\Program Files\Epic Games\UE_5.4
-Selected Pack Version: 5.4
-Plugin Path: C:\MyProject\Plugins\Gorgeous
-Installation completed successfully!
-```
+- -type content|code (defaults to config packType)
+- -version X.Y (force a specific pack version)
+- -engine-version X.Y (override engine version for pack selection)
+- -action install|update|reinstall (force action)
+- -validate-sha (run SHA validation mode)
+- -sha-file MANIFEST_PATH (override manifest for SHA validation)
+- -gui (force GUI mode)
+- -version-info (print embedded build metadata)
 
-## Engine Version Detection
+CLI activation behavior:
 
-### Standard Installations
-Automatically locates UE from registry using version string:
-- `5.4` → Finds: `C:\Program Files\Epic Games\UE_5.4`
-- `5.3` → Finds: `C:\Program Files\Epic Games\UE_5.3`
+- No arguments: GUI mode (desktop/double-click flow).
+- CLI arguments present: CLI mode.
+- `-cli` always forces CLI mode.
 
-### Source Builds
-Versions in curly braces `{path}` are treated as source builds:
-- `{C:\UnrealEngine}` → Uses path from registry or direct path
-- `{D:\EpicGames\UE5}` → Looks up in registry: `HKEY_LOCAL_MACHINE\Software\EpicGames\Unreal Engine\SourceBuilds`
+## Code Signing Notes
 
-### Lookup Locations
+- You do not need a Microsoft developer account to Authenticode-sign an EXE.
+- You do need a code-signing certificate (OV or EV) from a trusted CA.
+- EV certificates provide better SmartScreen reputation behavior.
 
-**Windows:**
-```
-HKEY_LOCAL_MACHINE\Software\Epic Games\Unreal Engine\Builds
-HKEY_CURRENT_USER\Software\Epic Games\Unreal Engine\Builds
-```
+## Inspect EXE Metadata
 
-**macOS/Linux:**
-```
-$HOME/UnrealEngine/<version>
-$HOME/UE/<version>
-/opt/UnrealEngine/<version>
-```
-
-## Plugin Discovery
-
-The installer searches for the Gorgeous plugin in this order:
-
-1. **Project Plugins**: `{ProjectPath}/Plugins/Gorgeous/`
-2. **Engine Marketplace**: `{EnginePath}/Engine/Plugins/Marketplace/Gorgeous/`
-3. **Engine Plugins**: `{EnginePath}/Engine/Plugins/Gorgeous/`
-
-## Installation Details
-
-### Content Pack Installation
-- Copies entire pack to: `Plugins/Gorgeous/Content/{installPath}/`
-- Does NOT require recompilation
-- Files are immediately available in Unreal Editor
-
-### Code Pack Installation
-- Copies code to: `Plugins/Gorgeous/Source/{installPath}/`
-- Attempts automatic recompilation using UnrealBuildTool
-- If recompilation fails, files are still installed (manual recompile option follows)
-
-## Packaging for Distribution
-
-### Step 1: Prepare Pack Contents
-```
-MyPackContent/
-├── Meshes/
-├── Materials/
-├── Textures/
-└── ...
-```
-
-### Step 2: Create Configuration
-```powershell
-go run cmd/builder/main.go `
-  -pack "My Pack" `
-  -type content `
-  -path "C:\path\to\MyPackContent" `
-  -version "5.4"
-```
-
-### Step 3: Build Executable
-```powershell
-go build -o MyPackInstaller.exe cmd/main/main.go
-```
-
-### Step 4: Distribute
-- Package the .exe with config.json
-- Optionally include pack files if not yet embedded
-- Provide to users for installation
-
-## Version Matching Algorithm
-
-When user selects a project with UE version X.Y:
-
-1. **Exact Match**: If pack version X.Y exists → use it
-2. **No Match**: Iterate through available versions:
-   - Find versions older than X.Y
-   - Select the newest (most recent) older version
-   - Example: UE 5.5 available, packs exist for 5.4 and 5.3 → install 5.4
-
-## Error Handling
-
-The installer provides clear error messages for:
-- Missing .uproject files
-- Unreachable engine installations
-- Missing Gorgeous plugin
-- File permission issues
-- Invalid configuration
-
-Example error handling:
-```powershell
-# Will show user-friendly error dialog
-# and log detailed information to stderr in CLI mode
-```
-
-## Development
-
-### Adding New Features
-
-**Registry Support for New Platforms:**
-1. Extend `internal/registry/registry.go`
-2. Implement platform-specific path lookup
-3. Add to appropriate OS detection
-
-**Custom UI Styling:**
-1. Modify `internal/ui/gui.go`
-2. Implement custom Fyne canvas objects for rounded corners
-3. Add theme support
-
-### Building for Other Platforms
+Use the helper script:
 
 ```powershell
-# macOS
-$env:GOOS = "darwin"; $env:GOARCH = "amd64"
-go build -o gorgeous-installer-macos cmd/main/main.go
-
-# Linux
-$env:GOOS = "linux"; $env:GOARCH = "amd64"
-go build -o gorgeous-installer-linux cmd/main/main.go
+.\show-exe-metadata.ps1
 ```
 
-## Troubleshooting
+Or run these directly:
 
-### "Engine version not found in registry"
-- Verify UE installation is in standard location
-- Check registry: `regedit` → Navigate to engine registry paths
-- For source builds, verify `{path}` is correct in .uproject
+```powershell
+(Get-Item .\build\gorgeous-installer.exe).VersionInfo | Format-List *
+Get-AuthenticodeSignature .\build\gorgeous-installer.exe | Format-List Status,StatusMessage,SignerCertificate
+.\build\gorgeous-installer.exe -version-info
+Get-Content .\build\gorgeous-installer.build.json -Raw
+```
 
-### "Gorgeous plugin not found"
-- Ensure plugin is installed in project or engine
-- Check plugin path: Should contain `.uplugin` file
-- Verify folder naming (case-sensitive on some systems)
+## Windows Registry Keys Used
 
-### Plugin recompilation fails
-- Ensure Visual Studio/C++ tools are installed
-- Verify UnrealBuildTool accessibility
-- Check plugin Source folder for syntax errors
+Builds and source builds are resolved from common Epic key variants, including:
 
-## License
+- HKEY_CURRENT_USER\Software\Epic Games\Unreal Engine\Builds
+- HKEY_CURRENT_USER\Software\EpicGames\Unreal Engine\Builds
+- HKEY_LOCAL_MACHINE\Software\Epic Games\Unreal Engine\Builds
+- HKEY_LOCAL_MACHINE\Software\EpicGames\Unreal Engine\Builds
+- HKEY_CURRENT_USER\Software\Epic Games\Unreal Engine\SourceBuilds
+- HKEY_CURRENT_USER\Software\EpicGames\Unreal Engine\SourceBuilds
+- HKEY_LOCAL_MACHINE\Software\Epic Games\Unreal Engine\SourceBuilds
+- HKEY_LOCAL_MACHINE\Software\EpicGames\Unreal Engine\SourceBuilds
+- HKEY_LOCAL_MACHINE\Software\WOW6432Node\Epic Games\Unreal Engine\<version>
+- HKEY_LOCAL_MACHINE\Software\WOW6432Node\EpicGames\Unreal Engine\<version>
 
-This tool is part of the Gorgeous Plugin ecosystem.
+## Documentation
 
-## Support
+- Quickstart: Documentation/QUICKSTART.md
+- Examples: Documentation/EXAMPLES.md
+- Pack folder notes: packs/README.md
 
-For issues and feature requests, contact the development team or check codebase documentation.
+## Repository Layout
+
+```text
+cmd/                Entry points and helper tools
+internal/config/    Config loading and defaults
+internal/unreal/    Unreal project and engine detection
+internal/registry/  Engine association/path resolution
+internal/installer/ Install and compile pipeline
+internal/ui/        Native GUI and window behavior
+packs/              Embedded pack payload roots
+Documentation/      User guides and usage scenarios
+```

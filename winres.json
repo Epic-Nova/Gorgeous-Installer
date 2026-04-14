@@ -1,17 +1,31 @@
 {
   "RT_GROUP_ICON": {
-    "#1": "icon.png"
+    "APP": {
+      "0000": [
+        "icon.png"
+      ]
+    }
   },
   "RT_VERSION": {
     "#1": {
-      "CompanyName": "Gorgeous Core",
-      "FileDescription": "Unreal Engine Plugin Installer",
-      "FileVersion": "1.0.0.0",
-      "InternalName": "gorgeous-installer",
-      "LegalCopyright": "2026",
-      "OriginalFilename": "gorgeous-installer.exe",
-      "ProductName": "Gorgeous Installer",
-      "ProductVersion": "1.0.0.0"
+      "0000": {
+        "fixed": {
+          "file_version": "1.0.0.0",
+          "product_version": "1.0.0.0"
+        },
+        "info": {
+          "0409": {
+            "CompanyName": "Simsalabim Studio by Epic Nova",
+            "FileDescription": "Gorgeous Things - Resource Installer",
+            "FileVersion": "1.0.0.0",
+            "InternalName": "gorgeous-installer",
+            "LegalCopyright": "2026",
+            "OriginalFilename": "gorgeous-installer.exe",
+            "ProductName": "Gorgeous Installer",
+            "ProductVersion": "1.0.0.0"
+          }
+        }
+      }
     }
   }
 }

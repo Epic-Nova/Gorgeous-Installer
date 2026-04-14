@@ -2,7 +2,9 @@ package unreal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,11 +15,11 @@ import (
 
 // UProjectFile represents the structure of a .uproject file
 type UProjectFile struct {
-	FileVersion      int    `json:"FileVersion"`
+	FileVersion       int    `json:"FileVersion"`
 	EngineAssociation string `json:"EngineAssociation"`
-	Category         string `json:"Category"`
-	Description      string `json:"Description"`
-	Modules          []struct {
+	Category          string `json:"Category"`
+	Description       string `json:"Description"`
+	Modules           []struct {
 		Name string `json:"Name"`
 	} `json:"Modules"`
 }
@@ -42,44 +44,146 @@ func GetEngineVersionFromProject(projectPath string) (version, enginePath string
 		return "", "", fmt.Errorf("failed to parse uproject file: %w", err)
 	}
 
-	version = uproject.EngineAssociation
-
-	// Handle source builds (versions wrapped in {})
-	if strings.HasPrefix(version, "{") && strings.HasSuffix(version, "}") {
-		// Source build - look up in registry
-		sourcePath, err := registry.GetEngineSourcePath(version)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to locate source build engine: %w", err)
-		}
-		return version, sourcePath, nil
+	association := strings.TrimSpace(uproject.EngineAssociation)
+	if association == "" {
+		return "", "", fmt.Errorf("EngineAssociation is empty in %s", uprojectPath)
 	}
 
-	// Standard engine installation - find by version
-	enginePath, err = findEngineInstallation(version)
-	return version, enginePath, err
+	enginePath, err = registry.GetEnginePathByAssociation(association)
+	if err != nil {
+		enginePath, err = findEngineInstallation(association)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to resolve engine path for association %q: %w", association, err)
+		}
+	}
+
+	version, err = NormalizeVersion(association)
+	if err == nil {
+		return version, enginePath, nil
+	}
+
+	version, err = readEngineVersionFromBuildFile(enginePath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve semantic engine version from association %q and build metadata: %w", association, err)
+	}
+
+	return version, enginePath, nil
 }
 
-// LocateGorgeousPlugin finds the Gorgeous plugin in either the project or engine directory
+// LocateGorgeousPlugin retains compatibility for callers expecting the old API.
 func LocateGorgeousPlugin(projectPath, enginePath string) (string, error) {
-	// First, try to find it in the project's Plugins directory
-	projectPluginsPath := filepath.Join(projectPath, "Plugins", "Gorgeous")
-	if isValidPluginPath(projectPluginsPath) {
-		return projectPluginsPath, nil
+	return LocatePluginByName(projectPath, enginePath, "Gorgeous")
+}
+
+// LocatePluginByName finds the target plugin by matching the .uplugin file name
+// in either project or engine plugin folders.
+func LocatePluginByName(projectPath, enginePath, pluginName string) (string, error) {
+	if pluginName == "" {
+		return "", fmt.Errorf("plugin name is required")
 	}
 
-	// Try to find it in the engine's Plugins directory
-	enginePluginsPath := filepath.Join(enginePath, "Engine", "Plugins", "Marketplace", "Gorgeous")
-	if isValidPluginPath(enginePluginsPath) {
-		return enginePluginsPath, nil
+	projectRoot := projectPath
+	if strings.HasSuffix(strings.ToLower(projectRoot), ".uproject") {
+		projectRoot = filepath.Dir(projectRoot)
 	}
 
-	// Try alternative paths
-	altEnginePluginsPath := filepath.Join(enginePath, "Engine", "Plugins", "Gorgeous")
-	if isValidPluginPath(altEnginePluginsPath) {
-		return altEnginePluginsPath, nil
+	searchRoots := []string{filepath.Join(projectRoot, "Plugins")}
+	if strings.TrimSpace(enginePath) != "" {
+		searchRoots = append(searchRoots,
+			filepath.Join(enginePath, "Engine", "Plugins", "Marketplace"),
+			filepath.Join(enginePath, "Engine", "Plugins"),
+		)
 	}
 
-	return "", fmt.Errorf("gorgeous plugin not found in project or engine directories")
+	for _, root := range searchRoots {
+		if pluginPath, err := findPluginByUPluginName(root, pluginName); err == nil {
+			return pluginPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("plugin %q not found in project or engine plugin folders", pluginName)
+}
+
+func findPluginByUPluginName(pluginsRoot, pluginName string) (string, error) {
+	if pluginsRoot == "" {
+		return "", fmt.Errorf("empty plugins root")
+	}
+
+	if info, err := os.Stat(pluginsRoot); err != nil || !info.IsDir() {
+		return "", fmt.Errorf("plugins root not found: %s", pluginsRoot)
+	}
+
+	// Fast-path: common direct plugin folder naming.
+	direct := filepath.Join(pluginsRoot, pluginName)
+	if isPluginWithMatchingUPlugin(direct, pluginName) {
+		return direct, nil
+	}
+
+	var found string
+	stop := errors.New("plugin-found")
+
+	walkErr := filepath.WalkDir(pluginsRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(pluginsRoot, path)
+		if relErr == nil && rel != "." {
+			if strings.Count(rel, string(os.PathSeparator)) > 5 {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		if !strings.EqualFold(filepath.Ext(d.Name()), ".uplugin") {
+			return nil
+		}
+
+		base := strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))
+		if strings.EqualFold(base, pluginName) {
+			found = filepath.Dir(path)
+			return stop
+		}
+
+		return nil
+	})
+
+	if walkErr != nil && !errors.Is(walkErr, stop) {
+		return "", walkErr
+	}
+	if found == "" {
+		return "", fmt.Errorf("plugin %q not found under %s", pluginName, pluginsRoot)
+	}
+
+	return found, nil
+}
+
+func isPluginWithMatchingUPlugin(pluginDir, pluginName string) bool {
+	entries, err := os.ReadDir(pluginDir)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".uplugin") {
+			continue
+		}
+		base := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		if strings.EqualFold(base, pluginName) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // findUProjectFile locates the .uproject file in the given directory
@@ -127,12 +231,48 @@ func isValidPluginPath(pluginPath string) bool {
 }
 
 // findEngineInstallation locates the UE installation directory for a given version
-func findEngineInstallation(version string) (string, error) {
+
+type engineBuildVersion struct {
+	MajorVersion int `json:"MajorVersion"`
+	MinorVersion int `json:"MinorVersion"`
+}
+
+func readEngineVersionFromBuildFile(enginePath string) (string, error) {
+	if enginePath == "" {
+		return "", fmt.Errorf("engine path is empty")
+	}
+
+	buildVersionPath := filepath.Join(enginePath, "Engine", "Build", "Build.version")
+	data, err := os.ReadFile(buildVersionPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read %s: %w", buildVersionPath, err)
+	}
+
+	var buildVersion engineBuildVersion
+	if err := json.Unmarshal(data, &buildVersion); err != nil {
+		return "", fmt.Errorf("failed to parse %s: %w", buildVersionPath, err)
+	}
+
+	if buildVersion.MajorVersion <= 0 {
+		return "", fmt.Errorf("invalid major version in %s", buildVersionPath)
+	}
+
+	return fmt.Sprintf("%d.%d", buildVersion.MajorVersion, buildVersion.MinorVersion), nil
+}
+
+// findEngineInstallation locates the UE installation directory for a given association/version.
+func findEngineInstallation(association string) (string, error) {
+	version, err := NormalizeVersion(association)
+	if err != nil {
+		return "", fmt.Errorf("could not normalize engine association %q: %w", association, err)
+	}
+
 	// Try standard installation paths
 	standardPaths := []string{
 		filepath.Join("C:\\Program Files", "Epic Games", "UE_"+version),
 		filepath.Join("C:\\Program Files", "EpicGames", "UE_"+version),
-		filepath.Join(os.Getenv("APPDATA"), "..", "Local", "EpicGamesLauncher", "Saved", "InstallationInfo.json"),
+		filepath.Join("D:\\Epic Games", "UE_"+version),
+		filepath.Join("D:\\EpicGames", "UE_"+version),
 	}
 
 	for _, path := range standardPaths {

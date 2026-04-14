@@ -17,6 +17,7 @@ func main() {
 	packPath := flag.String("path", "", "Path to content/code pack directory")
 	outputDir := flag.String("output", ".", "Output directory for config.json")
 	version := flag.String("version", "1.0", "Pack version")
+	shaFile := flag.String("sha-file", "", "Optional SHA manifest path for this version")
 
 	flag.Parse()
 
@@ -32,8 +33,9 @@ func main() {
 		InstallPath: "Content",
 		AvailableVersions: []config.PackVersion{
 			{
-				Version: *version,
-				Path:    *packPath,
+				Version:  *version,
+				Path:     *packPath,
+				SHAFile:  *shaFile,
 				CheckSum: "", // Could be computed here
 			},
 		},

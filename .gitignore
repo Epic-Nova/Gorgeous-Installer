@@ -1,0 +1,11 @@
+build/
+*.exe
+*.syso
+icon.ico
+resource
+winres.generated.json
+
+# Keep source icon and embedded config/packs tracked
+!icon.png
+!config.json
+!packs/

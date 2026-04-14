@@ -6,7 +6,7 @@
     name="Gorgeous.Installer"
     type="win32"
   />
-  <description>Gorgeous Installer - Unreal Engine Plugin Installer</description>
+  <description>Gorgeous Things - Resource Installer</description>
 
   <!-- Windows 10 compatibility -->
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
