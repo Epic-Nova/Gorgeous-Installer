@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,31 +168,31 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 
 	for _, v := range versions {
 		updateStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, v.sysVer)
-		zipName := fmt.Sprintf("%s-%s.zip", manifest.ID, v.ueVer)
-		zipPath := filepath.Join(packsDir, zipName)
+		packName := fmt.Sprintf("%s-%s", manifest.ID, v.ueVer)
+		packPath := filepath.Join(packsDir, packName)
+		os.MkdirAll(packPath, 0755)
 
-		args := []string{"-r", zipPath}
+		var pathsToCopy []string
 		if len(manifest.PayloadPaths) > 0 {
-			args = append(args, manifest.PayloadPaths...)
-		} else {
-			rel, _ := filepath.Rel(pluginRoot, sourcePath)
-			if rel != "." && rel != "" {
-				args = append(args, rel)
-			} else {
-				args = append(args, ".")
+			for _, p := range manifest.PayloadPaths {
+				pathsToCopy = append(pathsToCopy, filepath.Join(pluginRoot, p))
 			}
+		} else {
+			pathsToCopy = []string{pluginRoot + "/."}
 		}
 
-		cmdZip := exec.Command("zip", args...)
-		cmdZip.Dir = pluginRoot
-		if err := cmdZip.Run(); err != nil {
-			updateStatus("Zip failed for UE %s: %v", v.ueVer, err)
-			return
+		for _, src := range pathsToCopy {
+			cmdCp := exec.Command("cp", "-R", src, packPath+"/")
+			if err := cmdCp.Run(); err != nil {
+				updateStatus("Copy failed for UE %s: %v", v.ueVer, err)
+				return
+			}
 		}
 
 		availVersions = append(availVersions, config.PackVersion{
 			Version: v.ueVer,
-			Path:    fmt.Sprintf("packs/%s", zipName),
+			Path:    fmt.Sprintf("packs/%s", packName),
+			SHAFile: fmt.Sprintf("packs/%s.sha256", packName),
 		})
 	}
 
@@ -217,13 +218,16 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 		updateStatus("Windows build successful!")
 	}
 
-	updateStatus("Compiling gorgeous-installer binary for Linux...")
+	updateStatus("Compiling gorgeous-installer binary via build.sh (Linux)...")
 	outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifest.ID))
-	cmdBuildLin := exec.Command("go", "build", "-ldflags", "-s -w", "-o", outBin, "./cmd/main")
+	cmdBuildLin := exec.Command("bash", "./build.sh")
 	cmdBuildLin.Dir = tempDir
-	cmdBuildLin.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1")
 	if out, err := cmdBuildLin.CombinedOutput(); err != nil {
 		updateStatus("Linux build failed: %v\n%s", err, string(out))
+	} else {
+		srcBin := filepath.Join(tempDir, "build", "gorgeous-installer")
+		copyFile(srcBin, outBin)
+		os.Chmod(outBin, 0755)
 	}
 
 	updateStatus("Offline publisher build completed! Files written to %s", outDir)
@@ -234,4 +238,19 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 		}
 		dialog.ShowInformation("Offline Publish Complete", fmt.Sprintf("Standalone installer successfully built!\n\nExecutables generated in:\n%s", outDir), win)
 	})
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }

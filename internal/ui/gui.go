@@ -29,6 +29,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	bundle "gorgeous-installer"
+	"gorgeous-installer/internal/api"
 	"gorgeous-installer/internal/config"
 	"gorgeous-installer/internal/installer"
 	"gorgeous-installer/internal/settings"
@@ -1130,6 +1131,15 @@ func (g *GUIApp) Run() {
 					})
 				})
 			}
+		}()
+	}
+
+	if api.IsDevMode {
+		go func() {
+			time.Sleep(4 * time.Second) // Stagger slightly after boot anim
+			fyne.Do(func() {
+				g.showDevModeToast()
+			})
 		}()
 	}
 
@@ -2421,6 +2431,59 @@ func (g *GUIApp) showUpdateToast(newVer string, onUpdateTap func()) {
 	
 	// Animate away
 	time.AfterFunc(5 * time.Second, func() {
+		fyne.Do(func() {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+				v := p.X
+				g.toastLayout.offsetY = 150 * v // slide back down
+				g.toastLayer.Refresh()
+			})
+			animOut.Curve = fyne.AnimationEaseIn
+			animOut.Start()
+			
+			time.AfterFunc(450*time.Millisecond, func() {
+				fyne.Do(func() {
+					g.toastLayer.Remove(toastCard)
+					g.toastLayer.Refresh()
+				})
+			})
+		})
+	})
+}
+
+func (g *GUIApp) showDevModeToast() {
+	g.toastLayer.Objects = nil
+	g.toastLayer.Refresh()
+
+	iconTxt := canvas.NewText("⚠️", color.NRGBA{R: 240, G: 165, B: 52, A: 255})
+	iconTxt.TextSize = 22
+	iconBox := container.NewCenter(iconTxt)
+
+	title := canvas.NewText("Dev Mode Activated", gtTextPrimary)
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 14
+	
+	msg := canvas.NewText("Operating in HTTP is dangerous.", gtTextSecondary)
+	msg.TextSize = 12
+	
+	textCol := container.NewVBox(title, msg)
+	
+	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
+	
+	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
+	g.toastLayer.Add(toastCard)
+	g.toastLayer.Refresh()
+	
+	// Animate in by sliding up
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+		v := p.X
+		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
+		g.toastLayer.Refresh()
+	})
+	animIn.Curve = fyne.AnimationEaseOut
+	animIn.Start()
+	
+	// Animate away
+	time.AfterFunc(8 * time.Second, func() {
 		fyne.Do(func() {
 			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
