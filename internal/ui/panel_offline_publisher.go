@@ -150,24 +150,25 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 
 	var availVersions []config.PackVersion
 
+	pluginRoot := sourcePath
+	for pluginRoot != "" && pluginRoot != string(filepath.Separator) && pluginRoot != "." {
+		matches, _ := filepath.Glob(filepath.Join(pluginRoot, "*.uplugin"))
+		if len(matches) > 0 {
+			break
+		}
+		parent := filepath.Dir(pluginRoot)
+		if parent == pluginRoot {
+			pluginRoot = sourcePath
+			break
+		}
+		pluginRoot = parent
+	}
+	actualPluginName := filepath.Base(pluginRoot)
+
 	for _, v := range versions {
 		updateStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, v.sysVer)
 		zipName := fmt.Sprintf("%s-%s.zip", manifest.ID, v.ueVer)
 		zipPath := filepath.Join(packsDir, zipName)
-
-		pluginRoot := sourcePath
-		for pluginRoot != "" && pluginRoot != string(filepath.Separator) && pluginRoot != "." {
-			matches, _ := filepath.Glob(filepath.Join(pluginRoot, "*.uplugin"))
-			if len(matches) > 0 {
-				break
-			}
-			parent := filepath.Dir(pluginRoot)
-			if parent == pluginRoot {
-				pluginRoot = sourcePath
-				break
-			}
-			pluginRoot = parent
-		}
 
 		args := []string{"-r", zipPath}
 		if len(manifest.PayloadPaths) > 0 {
@@ -198,7 +199,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 	cfg := config.Config{
 		PackName:          manifest.ID,
 		PackType:          "hybrid",
-		PluginName:        manifest.Name,
+		PluginName:        actualPluginName,
 		AvailableVersions: availVersions,
 	}
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
