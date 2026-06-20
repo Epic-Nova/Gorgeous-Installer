@@ -26,6 +26,8 @@ type Installer struct {
 	ProjectPath  string
 	EnginePath   string
 	PackContent  []byte
+	SourceDir    string
+	RecompileOnly bool
 	Action       InstallAction
 	StatusLogger func(string, ...any)
 	RunContext   context.Context
@@ -109,11 +111,23 @@ func (i *Installer) effectiveAction(plan *InstallPlan) InstallAction {
 
 // Install performs the installation based on pack type
 func (i *Installer) Install() error {
+	// If we're fully packless and just recompiling, don't even check PackType
+	if i.PackVersion == nil && i.RecompileOnly {
+		i.logf("Packless recompile-only mode — invoking UnrealBuildTool directly")
+		if err := i.recompilePlugin(); err != nil {
+			return fmt.Errorf("plugin recompilation failed: %w", err)
+		}
+		i.logf("Recompile complete")
+		return nil
+	}
+
 	switch i.PackType {
 	case "content":
 		return i.installContentPack()
 	case "code":
 		return i.installCodePack()
+	case "hybrid":
+		return i.installHybridPack()
 	default:
 		return fmt.Errorf("unknown pack type: %s", i.PackType)
 	}
@@ -169,6 +183,18 @@ func (i *Installer) installContentPack() error {
 
 // installCodePack installs a code pack and recompiles the plugin
 func (i *Installer) installCodePack() error {
+	// Recompile-only mode: skip pack selection and file operations entirely.
+	// This is used by --verify-compatibility and --recompile-only to rebuild
+	// the plugin without touching any source files.
+	if i.RecompileOnly {
+		i.logf("Recompile-only mode — skipping file copy, invoking UnrealBuildTool directly")
+		if err := i.recompilePlugin(); err != nil {
+			return fmt.Errorf("plugin recompilation failed: %w", err)
+		}
+		i.logf("Recompile complete")
+		return nil
+	}
+
 	plan, err := i.BuildInstallPlan()
 	if err != nil {
 		return err
@@ -216,6 +242,56 @@ func (i *Installer) installCodePack() error {
 	return nil
 }
 
+// installHybridPack installs a hybrid pack (content + code) to the plugin root
+func (i *Installer) installHybridPack() error {
+	plan, err := i.BuildInstallPlan()
+	if err != nil {
+		return err
+	}
+
+	sourceDir := plan.DestinationRoot
+	action := i.effectiveAction(plan)
+
+	// Create root directory if needed
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		return fmt.Errorf("failed to create hybrid directory: %w", err)
+	}
+
+	installPath := i.PackVersion.Path
+	i.logf("Install action: %s", action)
+	i.logf("Installing hybrid pack from: %s", installPath)
+	i.logf("Installing to: %s", sourceDir)
+	i.logf("Pack version: %s", plan.PackVersion)
+
+	if action == InstallActionUpdate {
+		if len(plan.ChangedFiles) == 0 {
+			i.logf("No changed files detected for update; skipping hybrid copy and recompile")
+			return nil
+		}
+
+		i.logf("Updating %d changed hybrid files", len(plan.ChangedFiles))
+		if err := copyPackFiles(installPath, sourceDir, plan.ChangedFiles); err != nil {
+			return fmt.Errorf("failed to copy updated hybrid files: %w", err)
+		}
+	} else {
+		// Copy all hybrid files
+		if err := copyPackDirectory(installPath, sourceDir); err != nil {
+			return fmt.Errorf("failed to copy hybrid content: %w", err)
+		}
+	}
+
+	i.logf("Hybrid pack installed, attempting plugin recompilation")
+
+	// Recompile the plugin
+	if err := i.recompilePlugin(); err != nil {
+		return fmt.Errorf("plugin recompilation failed: %w. Try to rebuild the project from sln project manually", err)
+	}
+
+	i.logf("Hybrid pack installed successfully")
+	return nil
+}
+
+
 // recompilePlugin attempts to recompile the plugin using UnrealBuildTool
 func (i *Installer) recompilePlugin() error {
 	if strings.TrimSpace(i.EnginePath) == "" {
@@ -232,95 +308,79 @@ func (i *Installer) recompilePlugin() error {
 	i.logf("Compiling plugin: %s", pluginName)
 	i.logf("Engine path: %s", i.EnginePath)
 
-	if projectFile, projectErr := resolveProjectFilePath(i.ProjectPath); projectErr == nil {
-		targetName := editorTargetFromProject(projectFile)
+	projectFile, projectErr := resolveProjectFilePath(i.ProjectPath)
+	if projectErr != nil {
+		i.logf("Could not resolve .uproject for compile: %v", projectErr)
+		return fmt.Errorf("could not resolve .uproject for compile: %w", projectErr)
+	}
 
-		if ubtDLLPath, dllErr := findUnrealBuildToolDLL(i.EnginePath); dllErr == nil {
-			if dotnetPath, dotnetErr := exec.LookPath("dotnet"); dotnetErr == nil {
-				i.logf("Using UnrealBuildTool DLL via dotnet: %s", ubtDLLPath)
+	targetName := editorTargetFromProject(projectFile)
 
-				cmd := exec.CommandContext(
-					i.commandContext(),
-					dotnetPath,
-					ubtDLLPath,
-					targetName,
-					"Win64",
-					"Development",
-					"-Project="+projectFile,
-					"-WaitMutex",
-					"-FromMSBuild",
-					"-Progress",
-					"-plugin="+upluginPath,
-				)
-				cmd.Dir = i.EnginePath
+	// Select platform string for UBT
+	platform := "Win64"
+	switch runtime.GOOS {
+	case "linux":
+		platform = "Linux"
+	case "darwin":
+		platform = "Mac"
+	}
 
-				if runErr := i.runCommandWithLog(cmd); runErr == nil {
-					return nil
-				} else {
-					i.logf("UnrealBuildTool DLL compile failed, falling back: %v", runErr)
-				}
-			} else {
-				i.logf("dotnet not found; skipping UnrealBuildTool.dll path: %v", dotnetErr)
-			}
-		} else {
-			i.logf("UnrealBuildTool.dll not found for direct compile: %v", dllErr)
+	// On Linux/Mac, prefer the shell wrapper (RunUAT.sh / UBT.sh) so we don't
+	// depend on a specific .NET runtime version being installed.
+	ubtPath, ubtErr := findUnrealBuildToolExecutable(i.EnginePath)
+	if ubtErr != nil {
+		i.logf("UnrealBuildTool not found: %v", ubtErr)
+		return fmt.Errorf("UnrealBuildTool not found: %w", ubtErr)
+	}
+
+	var cmd *exec.Cmd
+	if runtime.GOOS != "windows" {
+		// On Linux/Mac, invoke via the shell wrapper to avoid .NET version pinning.
+		shWrapper := filepath.Join(i.EnginePath, "Engine", "Build", "BatchFiles", "Linux", "Build.sh")
+		if runtime.GOOS == "darwin" {
+			shWrapper = filepath.Join(i.EnginePath, "Engine", "Build", "BatchFiles", "Mac", "Build.sh")
 		}
-
-		if ubtExePath, ubtExeErr := findUnrealBuildToolExecutable(i.EnginePath); ubtExeErr == nil {
-			i.logf("Using UnrealBuildTool executable fallback: %s", ubtExePath)
-
-			cmd := exec.CommandContext(
+		if _, statErr := os.Stat(shWrapper); statErr == nil {
+			i.logf("Using shell Build.sh wrapper: %s", shWrapper)
+			cmd = exec.CommandContext(
 				i.commandContext(),
-				ubtExePath,
+				"/bin/bash",
+				shWrapper,
 				targetName,
-				"Win64",
+				platform,
 				"Development",
 				"-Project="+projectFile,
 				"-WaitMutex",
-				"-FromMSBuild",
 				"-Progress",
-				"-plugin="+upluginPath,
 			)
 			cmd.Dir = i.EnginePath
-
-			if runErr := i.runCommandWithLog(cmd); runErr == nil {
-				return nil
-			} else {
-				i.logf("UnrealBuildTool executable compile failed, falling back to BuildPlugin: %v", runErr)
-			}
 		} else {
-			i.logf("UnrealBuildTool executable not found for direct compile: %v", ubtExeErr)
+			i.logf("Build.sh not found at %s, falling back to UBT executable", shWrapper)
 		}
-	} else {
-		i.logf("Could not resolve .uproject for direct compile: %v", projectErr)
 	}
 
-	runUATPath, err := findAutomationTool(i.EnginePath)
-	if err != nil {
-		return err
+	if cmd == nil {
+		// Fallback: direct UBT executable invocation (Windows or when Build.sh is missing)
+		i.logf("Using UnrealBuildTool executable: %s", ubtPath)
+		cmd = exec.CommandContext(
+			i.commandContext(),
+			ubtPath,
+			targetName,
+			platform,
+			"Development",
+			"-Project="+projectFile,
+			"-WaitMutex",
+			"-FromMSBuild",
+			"-Progress",
+		)
+		cmd.Dir = i.EnginePath
 	}
 
-	buildOutputDir := filepath.Join(os.TempDir(), "gorgeous-installer-build", pluginName)
-	_ = os.RemoveAll(buildOutputDir)
+	cmd.Env = append(os.Environ(), "GORGEOUS_SKIP_INSTALLER_BUILD=1")
 
-	if err := os.MkdirAll(filepath.Dir(buildOutputDir), 0755); err != nil {
-		return fmt.Errorf("failed to prepare build output path: %w", err)
-	}
-
-	i.logf("Using Unreal Automation Tool fallback: %s", runUATPath)
-
-	cmd := exec.CommandContext(
-		i.commandContext(),
-		runUATPath,
-		"BuildPlugin",
-		"-Plugin="+upluginPath,
-		"-Package="+buildOutputDir,
-		"-TargetPlatforms=Win64",
-	)
-	cmd.Dir = i.EnginePath
-
-	if err := i.runCommandWithLog(cmd); err != nil {
-		return fmt.Errorf("plugin recompilation failed: %w", err)
+	if runErr := i.runCommandWithLog(cmd); runErr != nil {
+		i.logf("Recompile failed: %v", runErr)
+		return fmt.Errorf("plugin recompilation failed: %w", runErr)
 	}
 
 	return nil

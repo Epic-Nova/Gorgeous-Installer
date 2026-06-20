@@ -3,48 +3,5 @@
   "pluginName": "GorgeousCore",
   "packType": "code",
   "installPath": "Content",
-  "availableVersions": [
-    {
-      "version": "5.7",
-      "path": "packs/5.7/content",
-      "shaFile": "packs/5.7/manifest.sha256",
-      "checksum": ""
-    },
-    {
-      "version": "5.6",
-      "path": "packs/5.6/content",
-      "shaFile": "packs/5.6/manifest.sha256",
-      "checksum": ""
-    },
-    {
-      "version": "5.5",
-      "path": "packs/5.5/content",
-      "shaFile": "packs/5.5/manifest.sha256",
-      "checksum": ""
-    },
-    {
-      "version": "5.4",
-      "path": "packs/5.4/content",
-      "shaFile": "packs/5.4/manifest.sha256",
-      "checksum": ""
-    },
-    {
-      "version": "5.3",
-      "path": "packs/5.3/content",
-      "shaFile": "packs/5.3/manifest.sha256",
-      "checksum": ""
-    },
-    {
-      "version": "5.2",
-      "path": "packs/5.2/content",
-      "shaFile": "packs/5.2/manifest.sha256",
-      "checksum": ""
-    },
-    {
-      "version": "5.1",
-      "path": "packs/5.1/content",
-      "shaFile": "packs/5.1/manifest.sha256",
-      "checksum": ""
-    }
-  ]
+  "availableVersions": []
 }

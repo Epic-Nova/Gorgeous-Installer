@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"gorgeous-installer/internal/registry"
@@ -305,4 +306,62 @@ func NormalizeVersion(v string) (string, error) {
 	}
 
 	return matches[1] + "." + matches[2], nil
+}
+
+func CheckProjectBinaries(projectPath string) bool {
+	dir := projectPath
+	if strings.HasSuffix(strings.ToLower(dir), ".uproject") {
+		dir = filepath.Dir(dir)
+	}
+
+	// If no Source folder exists, it's a Blueprint project and needs no binaries
+	sourceDir := filepath.Join(dir, "Source")
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		return true // Ready to launch
+	}
+
+	platform := "Linux"
+	if runtime.GOOS == "windows" {
+		platform = "Win64"
+	} else if runtime.GOOS == "darwin" {
+		platform = "Mac"
+	}
+
+	projectModulesPath := filepath.Join(dir, "Binaries", platform, "UnrealEditor.modules")
+	if _, err := os.Stat(projectModulesPath); os.IsNotExist(err) {
+		return false // No modules file, definitely needs compile
+	}
+
+	projectData, err := os.ReadFile(projectModulesPath)
+	if err != nil {
+		return false
+	}
+	var projModules struct {
+		BuildId string `json:"BuildId"`
+	}
+	if err := json.Unmarshal(projectData, &projModules); err != nil || projModules.BuildId == "" {
+		return false
+	}
+
+	// Now get engine BuildId
+	_, enginePath, err := GetEngineVersionFromProject(projectPath)
+	if err != nil || enginePath == "" {
+		// Can't resolve engine path, safer to trigger compile to let UBT figure it out
+		return false 
+	}
+
+	engineModulesPath := filepath.Join(enginePath, "Engine", "Binaries", platform, "UnrealEditor.modules")
+	engineData, err := os.ReadFile(engineModulesPath)
+	if err != nil {
+		return true // If we can't find the engine modules (e.g. source build), trust the project ones
+	}
+	var engModules struct {
+		BuildId string `json:"BuildId"`
+	}
+	if err := json.Unmarshal(engineData, &engModules); err != nil || engModules.BuildId == "" {
+		return true
+	}
+
+	// Exact compatibility check
+	return projModules.BuildId == engModules.BuildId
 }

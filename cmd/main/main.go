@@ -22,7 +22,14 @@ type cliOptions struct {
 	InstallAction  string
 	ValidateSHA    bool
 	ManifestSHA    string
-	ExplicitCLIArg bool
+	SourceDir           string
+	InstallZip          string
+	RecompileOnly       bool
+	WaitForPID          int
+	ReopenProject       bool
+	VerifyCompatibility bool
+	ExplicitCLIArg      bool
+	AutoBuildProject    bool
 }
 
 func main() {
@@ -36,6 +43,12 @@ func main() {
 	installAction := flag.String("action", "", "Install action: install, update, or reinstall")
 	validateSHA := flag.Bool("validate-sha", false, "Validate pack files against a SHA manifest in CLI mode")
 	shaFile := flag.String("sha-file", "", "Path to SHA/SHA256 manifest file")
+	sourceDir := flag.String("source-dir", "", "Path to custom source files to install instead of embedded pack")
+	installZip := flag.String("install-zip", "", "Path to downloaded plugin ZIP update")
+	recompileOnly := flag.Bool("recompile-only", false, "Skip file installation and only run UnrealBuildTool")
+	waitForPID := flag.Int("wait-for-pid", 0, "Wait for the specified Process ID to terminate before running")
+	verifyCompat := flag.Bool("verify-compatibility", false, "Show UI for binary offset mismatch resolution and recompile plugins")
+	reopenProject := flag.Bool("reopen-project", false, "Reopen the Unreal Editor project after successful compilation/installation")
 	showBuildInfo := flag.Bool("version-info", false, "Print build metadata and exit")
 	flag.Parse()
 
@@ -59,7 +72,13 @@ func main() {
 		InstallAction:  strings.TrimSpace(*installAction),
 		ValidateSHA:    *validateSHA,
 		ManifestSHA:    strings.TrimSpace(*shaFile),
-		ExplicitCLIArg: *cliMode,
+		SourceDir:      strings.TrimSpace(*sourceDir),
+		InstallZip:          strings.TrimSpace(*installZip),
+		RecompileOnly:       *recompileOnly,
+		WaitForPID:          *waitForPID,
+		ReopenProject:       *reopenProject,
+		VerifyCompatibility: *verifyCompat,
+		ExplicitCLIArg:      *cliMode,
 	}
 
 	if opts.ProjectPath == "" && len(flag.Args()) > 0 {
@@ -72,21 +91,80 @@ func main() {
 		opts.PackVersion != "" ||
 		opts.EngineVersion != "" ||
 		opts.InstallAction != "" ||
-		opts.ManifestSHA != ""
+		opts.ManifestSHA != "" ||
+		opts.SourceDir != "" ||
+		opts.InstallZip != "" ||
+		opts.RecompileOnly ||
+		opts.VerifyCompatibility ||
+		opts.WaitForPID != 0
 
-	if *guiMode {
-		runGUIMode(cfg)
+	if opts.ExplicitCLIArg {
+		runCLIMode(cfg, opts)
 		return
 	}
 
-	if opts.ExplicitCLIArg || hasCLIInputs {
+	if *guiMode {
+		runGUIMode(cfg, opts)
+		return
+	}
+
+	// Double-click or open-with behavior: if the only arg is a .uproject file
+	if opts.ProjectPath != "" && strings.HasSuffix(strings.ToLower(opts.ProjectPath), ".uproject") && 
+		opts.PackType == "" && opts.InstallAction == "" && !opts.RecompileOnly && !opts.VerifyCompatibility {
+		
+		if unreal.CheckProjectBinaries(opts.ProjectPath) {
+			// Binaries exist, launch project and exit silently
+			if err := unreal.OpenProject(opts.ProjectPath); err != nil {
+				fmt.Fprintln(os.Stderr, "Error opening project:", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
+		
+		// Binaries missing: Boot GUI and instantly show Auto-Build modal
+		opts.AutoBuildProject = true
+		runGUIMode(cfg, opts)
+		return
+	}
+
+	if hasCLIInputs {
 		runCLIMode(cfg, opts)
 	} else {
-		runGUIMode(cfg)
+		runGUIMode(cfg, opts)
 	}
 }
 
 func runCLIMode(cfg *config.Config, opts cliOptions) {
+	fmt.Println("Running in CLI Mode...")
+
+	if opts.InstallZip != "" {
+		fmt.Printf("Extracting and applying update from %s...\n", opts.InstallZip)
+		if err := installer.ProcessZipUpdate(opts.InstallZip, opts.ProjectPath, opts.WaitForPID); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Update successful.")
+		return
+	}
+
+	if opts.VerifyCompatibility {
+		if opts.ProjectPath == "" {
+			fmt.Fprintln(os.Stderr, "[gorgeous-installer] Error: --project is required for --verify-compatibility")
+			os.Exit(1)
+		}
+		absPath, err := filepath.Abs(opts.ProjectPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[gorgeous-installer] Error resolving project path: %v\n", err)
+			os.Exit(1)
+		}
+		opts.ProjectPath = absPath
+		opts.RecompileOnly = true
+		// Automatically trigger the silent Focus Mode modal instead of the dashboard
+		opts.AutoBuildProject = false // Keep false so VerifyCompat handles it distinctly
+		runGUIMode(cfg, opts)
+		return
+	}
+
 	if opts.ValidateSHA {
 		runCLISHAValidation(cfg, opts)
 		return
@@ -94,6 +172,8 @@ func runCLIMode(cfg *config.Config, opts cliOptions) {
 
 	runCLIInstall(cfg, opts)
 }
+
+// runVerifyCompatibility was removed because --verify-compatibility now uses the GUI
 
 func runCLIInstall(cfg *config.Config, opts cliOptions) {
 	if opts.ProjectPath == "" {
@@ -163,6 +243,8 @@ func runCLIInstall(cfg *config.Config, opts cliOptions) {
 
 	// Perform installation
 	inst := installer.NewInstaller(pluginPath, packType, selectedPack, cfg.InstallPath, absPath, enginePath)
+	inst.SourceDir = opts.SourceDir
+	inst.RecompileOnly = opts.RecompileOnly
 
 	action := installer.InstallActionInstall
 	if strings.TrimSpace(opts.InstallAction) != "" {
@@ -190,8 +272,11 @@ func runCLIInstall(cfg *config.Config, opts cliOptions) {
 	fmt.Println("Installation completed successfully!")
 }
 
-func runGUIMode(cfg *config.Config) {
-	ui.NewGUIApp(cfg).Run()
+func runGUIMode(cfg *config.Config, opts cliOptions) {
+	fmt.Println("Starting installer in GUI mode...")
+	app := ui.NewGUIApp(cfg, opts.RecompileOnly, opts.WaitForPID, opts.ReopenProject, opts.AutoBuildProject, opts.VerifyCompatibility)
+	app.ProjectPath = opts.ProjectPath
+	app.Run()
 }
 
 func runCLISHAValidation(cfg *config.Config, opts cliOptions) {

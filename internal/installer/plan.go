@@ -140,6 +140,8 @@ func (i *Installer) resolveDestinationRootForPackType() (string, error) {
 	case "code":
 		sourceRoot := filepath.Join(i.PluginPath, "Source")
 		return i.resolveInstallDir(sourceRoot, "source")
+	case "hybrid":
+		return i.PluginPath, nil
 	default:
 		return "", fmt.Errorf("unknown pack type: %s", i.PackType)
 	}
