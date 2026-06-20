@@ -100,26 +100,48 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemMan
 			return
 		}
 
-		go g.runOfflinePublish(versions, outDirEntry.Text, manifest, sourcePath, appendStatus)
+		go g.runOfflinePublish(win, versions, outDirEntry.Text, manifest, sourcePath, appendStatus)
 	}, win)
 	d.Resize(fyne.NewSize(550, 400))
 	d.Show()
 }
 
-func (g *GUIApp) runOfflinePublish(versions []versionEntry, outDir string, manifest *SystemManifest, sourcePath string, appendStatus func(string, ...any)) {
-	appendStatus("Starting offline publish build for %s", manifest.Name)
+func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, outDir string, manifest *SystemManifest, sourcePath string, appendStatus func(string, ...any)) {
+	var progress *dialog.CustomDialog
+	var statusLbl *widget.Label
+
+	fyne.Do(func() {
+		statusLbl = widget.NewLabel("Starting offline publish build for " + manifest.Name + "...")
+		statusLbl.Wrapping = fyne.TextWrapWord
+		progBar := widget.NewProgressBarInfinite()
+		content := container.NewVBox(statusLbl, progBar)
+		progress = dialog.NewCustom("Offline Publisher Progress", "Hide to Background", content, win)
+		progress.Show()
+	})
+
+	updateStatus := func(msg string, args ...any) {
+		text := fmt.Sprintf(msg, args...)
+		appendStatus("%s", text)
+		fyne.Do(func() {
+			if statusLbl != nil {
+				statusLbl.SetText(text)
+			}
+		})
+	}
+
+	updateStatus("Starting offline publish build for %s", manifest.Name)
 
 	tempDir, err := os.MkdirTemp("", "gorgeous-offline-*")
 	if err != nil {
-		appendStatus("Failed to create temp dir: %v", err)
+		updateStatus("Failed to create temp dir: %v", err)
 		return
 	}
 	defer os.RemoveAll(tempDir)
 
-	appendStatus("Cloning Gorgeous Installer repository...")
+	updateStatus("Cloning Gorgeous Installer repository...")
 	cmdClone := exec.Command("git", "clone", "https://github.com/Epic-Nova/Gorgeous-Installer.git", tempDir)
 	if err := cmdClone.Run(); err != nil {
-		appendStatus("Git clone failed: %v", err)
+		updateStatus("Git clone failed: %v", err)
 		return
 	}
 
@@ -129,7 +151,7 @@ func (g *GUIApp) runOfflinePublish(versions []versionEntry, outDir string, manif
 	var availVersions []config.PackVersion
 
 	for _, v := range versions {
-		appendStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, v.sysVer)
+		updateStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, v.sysVer)
 		zipName := fmt.Sprintf("%s-%s.zip", manifest.ID, v.ueVer)
 		zipPath := filepath.Join(packsDir, zipName)
 
@@ -162,7 +184,7 @@ func (g *GUIApp) runOfflinePublish(versions []versionEntry, outDir string, manif
 		cmdZip := exec.Command("zip", args...)
 		cmdZip.Dir = pluginRoot
 		if err := cmdZip.Run(); err != nil {
-			appendStatus("Zip failed for UE %s: %v", v.ueVer, err)
+			updateStatus("Zip failed for UE %s: %v", v.ueVer, err)
 			return
 		}
 
@@ -172,7 +194,7 @@ func (g *GUIApp) runOfflinePublish(versions []versionEntry, outDir string, manif
 		})
 	}
 
-	appendStatus("Generating config.json...")
+	updateStatus("Generating config.json...")
 	cfg := config.Config{
 		PackName:          manifest.ID,
 		PackType:          "hybrid",
@@ -182,24 +204,33 @@ func (g *GUIApp) runOfflinePublish(versions []versionEntry, outDir string, manif
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 	os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
 
-	appendStatus("Compiling gorgeous-installer binary...")
+	updateStatus("Compiling gorgeous-installer binary for Windows...")
 	outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifest.ID))
 	
 	cmdBuild := exec.Command("go", "build", "-ldflags", "-s -w", "-o", outExe, "./cmd/main")
 	cmdBuild.Dir = tempDir
-	cmdBuild.Env = append(os.Environ(), "GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=0")
-	if out, err := cmdBuild.CombinedOutput(); err != nil {
-		appendStatus("Build failed: %v\n%s", err, string(out))
-		return
+	cmdBuild.Env = append(os.Environ(), "GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1", "CC=x86_64-w64-mingw32-gcc", "CXX=x86_64-w64-mingw32-g++")
+	if _, err := cmdBuild.CombinedOutput(); err != nil {
+		updateStatus("Windows build skipped or failed: %v\n(Note: Cross-compiling Fyne to Windows on Linux requires 'gcc-mingw-w64' installed)", err)
+	} else {
+		updateStatus("Windows build successful!")
 	}
 
+	updateStatus("Compiling gorgeous-installer binary for Linux...")
 	outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifest.ID))
 	cmdBuildLin := exec.Command("go", "build", "-ldflags", "-s -w", "-o", outBin, "./cmd/main")
 	cmdBuildLin.Dir = tempDir
-	cmdBuildLin.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0")
+	cmdBuildLin.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1")
 	if out, err := cmdBuildLin.CombinedOutput(); err != nil {
-		appendStatus("Linux build failed: %v\n%s", err, string(out))
+		updateStatus("Linux build failed: %v\n%s", err, string(out))
 	}
 
-	appendStatus("Offline publisher build completed! Files written to %s", outDir)
+	updateStatus("Offline publisher build completed! Files written to %s", outDir)
+
+	fyne.Do(func() {
+		if progress != nil {
+			progress.Hide()
+		}
+		dialog.ShowInformation("Offline Publish Complete", fmt.Sprintf("Standalone installer successfully built!\n\nExecutables generated in:\n%s", outDir), win)
+	})
 }

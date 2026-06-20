@@ -58,8 +58,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	refreshHistory := func(id string) {
 		historyList.Objects = []fyne.CanvasObject{
 			newGTLabel("History for " + id + ":"),
-			newGTCard("v1.1.0", "Published 2 days ago", newGTLabel("- Added new UI features")),
-			newGTCard("v1.0.0", "Published 2 weeks ago", newGTLabel("- Initial release")),
+			newGTCard("REPLACE_ME_WITH_DATA", "Published 2 days ago", newGTLabel("- Added new UI features")),
+			newGTCard("REPLACE_ME_WITH_DATA", "Published 2 weeks ago", newGTLabel("- Initial release")),
 		}
 		historyList.Refresh()
 	}
@@ -304,7 +304,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	infoSection := newGTCard("Source Definition", "Select the directory containing SystemManifest.json",
 		container.NewVBox(
 			container.NewHBox(selectSourceBtn, layout.NewSpacer()),
-			container.NewHBox(newGTLabel("Path:"), sourcePathLbl),
+			container.NewBorder(nil, nil, newGTLabel("Path:"), nil, container.NewHScroll(sourcePathLbl)),
 			container.NewHBox(newGTLabel("ID:"), manifestIDLbl, layout.NewSpacer(), newGTLabel("Version:"), manifestVerLbl),
 			container.NewHBox(newGTLabel("Name:"), manifestNameLbl),
 		),
