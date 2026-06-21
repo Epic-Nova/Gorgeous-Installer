@@ -16,6 +16,8 @@ type AppSettings struct {
 	InstalledNatively     bool     `json:"installedNatively"`
 	UprojectAssociated    bool     `json:"uprojectAssociated"`
 	PrevUprojectCommand   string   `json:"prevUprojectCommand"`
+	DevMode               bool     `json:"devMode"`
+	ForceHTTP             bool     `json:"forceHTTP"`
 }
 
 // ConfigFilePath returns the path to the settings JSON file.
@@ -47,6 +49,8 @@ func DefaultSettings() *AppSettings {
 		InstalledNatively:   false,
 		UprojectAssociated:  false,
 		PrevUprojectCommand: "",
+		DevMode:             false,
+		ForceHTTP:           false,
 	}
 }
 

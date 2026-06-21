@@ -60,8 +60,8 @@ type InstallerUpdateResponse struct {
 	ChecksumSha256  string `json:"ChecksumSha256"`
 }
 
-func CheckInstallerUpdate() (*InstallerUpdateResponse, error) {
-	resp, err := httpClient.Get(BaseURL + "/installer/update-check")
+func CheckInstallerUpdate(updateType string) (*InstallerUpdateResponse, error) {
+	resp, err := httpClient.Get(BaseURL + "/installer/update-check?type=" + updateType)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +127,12 @@ type PublishRequest struct {
 	Version   string `json:"version"`
 	Changelog string `json:"changelog"`
 	Signature string `json:"signature"`
+	Checksum  string `json:"checksum"`
+	
+	TargetPluginName string `json:"target_plugin_name,omitempty"`
+	DisplayName      string `json:"display_name,omitempty"`
+	Description      string `json:"description,omitempty"`
+	IsCoreSystem     bool   `json:"is_core_system,omitempty"`
 }
 
 type PublishResponse struct {
@@ -139,9 +145,12 @@ type PublishResponse struct {
 
 type ChallengeResponse struct {
 	Success   bool   `json:"Success"`
+	Error     string `json:"Error"`
 	Challenge string `json:"Challenge"`
 	ExpiresIn int    `json:"ExpiresIn"`
 }
+
+var ErrSystemNotFound = errors.New("SystemNotFound")
 
 func GetPublishChallenge(systemId string) (string, error) {
 	req, err := http.NewRequest("GET", BaseURL+"/systems/"+systemId+"/challenge", nil)
@@ -155,13 +164,17 @@ func GetPublishChallenge(systemId string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("failed to fetch challenge, status code %d", resp.StatusCode)
-	}
-
 	var challengeResp ChallengeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&challengeResp); err != nil {
 		return "", err
+	}
+
+	if resp.StatusCode == 404 && challengeResp.Error == "SystemNotFound" {
+		return challengeResp.Challenge, ErrSystemNotFound
+	}
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("failed to fetch challenge, status code %d", resp.StatusCode)
 	}
 
 	if !challengeResp.Success {
@@ -171,12 +184,27 @@ func GetPublishChallenge(systemId string) (string, error) {
 	return challengeResp.Challenge, nil
 }
 
-func PublishSystem(systemId, version, changelog, signature, payloadPath string) error {
+type SystemRegistrationData struct {
+	TargetPluginName string
+	DisplayName      string
+	Description      string
+	IsCoreSystem     bool
+}
+
+func PublishSystem(systemId, version, changelog, signature, checksum, payloadPath string, regData *SystemRegistrationData) error {
 	// 1. Post metadata to get Upload URL
 	reqBody := PublishRequest{
 		Version:   version,
 		Changelog: changelog,
 		Signature: signature,
+		Checksum:  checksum,
+	}
+	
+	if regData != nil {
+		reqBody.TargetPluginName = regData.TargetPluginName
+		reqBody.DisplayName = regData.DisplayName
+		reqBody.Description = regData.Description
+		reqBody.IsCoreSystem = regData.IsCoreSystem
 	}
 	jsonData, _ := json.Marshal(reqBody)
 
@@ -232,5 +260,105 @@ func PublishSystem(systemId, version, changelog, signature, payloadPath string) 
 		return fmt.Errorf("S3 upload failed: %d - %s", s3Resp.StatusCode, string(body))
 	}
 
+	return nil
+}
+
+type SystemItem struct {
+	SystemId         string   `json:"SystemId"`
+	TargetPluginName string   `json:"TargetPluginName"`
+	DisplayName      string   `json:"DisplayName"`
+	Description      string   `json:"Description"`
+	Version          string   `json:"Version"`
+	DownloadUrl      string   `json:"DownloadUrl"`
+	SourcePaths      []string `json:"SourcePaths"`
+	ContentPaths     []string `json:"ContentPaths"`
+	IsCoreSystem     bool     `json:"bIsCoreSystem"`
+}
+
+type SystemsResponse struct {
+	OfflineSystemCache []SystemItem `json:"OfflineSystemCache"`
+}
+
+func GetSystems() ([]SystemItem, error) {
+	req, err := http.NewRequest("GET", BaseURL+"/systems", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("API error: status code %d", resp.StatusCode)
+	}
+
+	var sysResp SystemsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sysResp); err != nil {
+		return nil, err
+	}
+
+	return sysResp.OfflineSystemCache, nil
+}
+
+func PatchSystem(systemId string, signature string, regData SystemRegistrationData) error {
+	reqBody := struct {
+		Signature        string `json:"signature"`
+		TargetPluginName string `json:"target_plugin_name"`
+		DisplayName      string `json:"display_name"`
+		Description      string `json:"description"`
+		IsCoreSystem     bool   `json:"is_core_system"`
+	}{
+		Signature:        signature,
+		TargetPluginName: regData.TargetPluginName,
+		DisplayName:      regData.DisplayName,
+		Description:      regData.Description,
+		IsCoreSystem:     regData.IsCoreSystem,
+	}
+
+	jsonData, _ := json.Marshal(reqBody)
+	req, err := http.NewRequest("PATCH", BaseURL+"/systems/"+systemId, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("failed to patch system, status code %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func DeleteSystem(systemId string, signature string) error {
+	reqBody := struct {
+		Signature string `json:"signature"`
+	}{
+		Signature: signature,
+	}
+
+	jsonData, _ := json.Marshal(reqBody)
+	req, err := http.NewRequest("DELETE", BaseURL+"/systems/"+systemId, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("failed to delete system, status code %d", resp.StatusCode)
+	}
 	return nil
 }

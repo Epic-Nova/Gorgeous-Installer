@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -219,6 +220,11 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 			}
 		}
 
+		shaFilePath := filepath.Join(packsDir, fmt.Sprintf("%s.sha256", packName))
+		if err := generateSHA256Manifest(packPath, shaFilePath); err != nil {
+			updateStatus("Warning: failed to generate SHA manifest for %s: %v", packName, err)
+		}
+
 		availVersions = append(availVersions, config.PackVersion{
 			Version: v.ueVer,
 			Path:    fmt.Sprintf("packs/%s", packName),
@@ -270,9 +276,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 	}
 
 	updateStatus("Copying packs and SHA files to output directory...")
-	outPacksDir := filepath.Join(outDir, "packs")
-	os.MkdirAll(outPacksDir, 0755)
-	cmdCpPacks := exec.Command("cp", "-R", filepath.Join(packsDir, "."), outPacksDir+"/")
+	cmdCpPacks := exec.Command("cp", "-R", filepath.Join(packsDir, ".")+"/", outDir+"/")
 	if err := cmdCpPacks.Run(); err != nil {
 		updateStatus("Failed to copy packs to output directory: %v", err)
 	} else {
@@ -304,7 +308,7 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func copyDir(src, dst string) error {
+func copyDirFiltered(src, dst string, excludePaths []string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -313,10 +317,34 @@ func copyDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
+
+		normRel := strings.ReplaceAll(rel, "\\", "/")
+
+		if info.IsDir() {
+			base := info.Name()
+			if base == ".git" || base == "Binaries" || base == "Intermediate" || base == "Saved" || base == "DerivedDataCache" || base == ".vs" {
+				return filepath.SkipDir
+			}
+		}
+
+		for _, excl := range excludePaths {
+			normExcl := strings.ReplaceAll(excl, "\\", "/")
+			if strings.HasPrefix(normRel, normExcl) {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+
 		target := filepath.Join(dst, rel)
 		if info.IsDir() {
 			return os.MkdirAll(target, os.ModePerm)
 		}
 		return copyFile(path, target)
 	})
+}
+
+func copyDir(src, dst string) error {
+	return copyDirFiltered(src, dst, nil)
 }

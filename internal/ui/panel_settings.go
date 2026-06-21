@@ -99,13 +99,71 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		installerVBox,
 	)
 
+	// Developer Section
+	forceHttpCheck := widget.NewCheck("Force HTTP (Local Testing)", func(b bool) {
+		appSettings.ForceHTTP = b
+	})
+	forceHttpCheck.SetChecked(appSettings.ForceHTTP)
+	if !appSettings.DevMode {
+		forceHttpCheck.Hide()
+	}
+
+	devModeCheck := widget.NewCheck("Enable Developer Mode", func(b bool) {
+		appSettings.DevMode = b
+		if b {
+			forceHttpCheck.Show()
+			if g.navItemsBox != nil && g.navPublisherBtn != nil {
+				// Check if it's already there
+				found := false
+				for _, obj := range g.navItemsBox.Objects {
+					if obj == g.navPublisherBtn {
+						found = true
+						break
+					}
+				}
+				if !found {
+					g.navItemsBox.Add(g.navPublisherBtn)
+				}
+			}
+		} else {
+			forceHttpCheck.Hide()
+			appSettings.ForceHTTP = false
+			forceHttpCheck.SetChecked(false)
+			if g.navItemsBox != nil && g.navPublisherBtn != nil {
+				g.navItemsBox.Remove(g.navPublisherBtn)
+			}
+		}
+	})
+	devModeCheck.SetChecked(appSettings.DevMode)
+
+	devHelpBtn := widget.NewButtonWithIcon("", theme.QuestionIcon(), func() {
+		g.showAnimatedDialog("Developer Mode", "Enabling Developer Mode allows testing HTTP connections and reveals the Publisher Menu.\n\nWhen enabled on a local codebase, Installer Source Updates are disabled to prevent overwriting your local edits.", false)
+	})
+
+	devVBox := container.NewVBox(
+		container.NewHBox(devModeCheck, devHelpBtn),
+		forceHttpCheck,
+	)
+
+	devSection := newGTCard("Developer Settings", "Advanced settings for debugging and development",
+		devVBox,
+	)
+
 	// Update Section
 	var updateSection fyne.CanvasObject
-	if appSettings.InstalledNatively {
-		newVer, ok := updater.CheckForUpdates(buildinfo.Version)
+	skipUpdateCheck := appSettings.DevMode && !appSettings.InstalledNatively
+	if !skipUpdateCheck {
+		newVer, ok := updater.CheckForUpdates(buildinfo.Version, appSettings.InstalledNatively)
 		if ok {
 			updateBtn := newAccentButton("Update to v"+newVer, accentUpdate, func() {
-				err := updater.PerformUpdate(appSettings.LocalBinPath + "/gorgeous-installer")
+				binPath := appSettings.LocalBinPath + "/gorgeous-installer"
+				if runtime.GOOS == "windows" {
+					binPath += ".exe"
+				}
+				if !appSettings.InstalledNatively {
+					binPath = "." // for source update, extract into current dir
+				}
+				err := updater.PerformUpdate(binPath, appSettings.InstalledNatively)
 				if err == nil {
 					appendStatus("Update started. Installer will now restart.")
 					time.Sleep(500 * time.Millisecond)
@@ -144,6 +202,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		updateSection,
 		pathsSection,
 		installerSection,
+		devSection,
 		container.NewHBox(layout.NewSpacer(), container.NewGridWrap(fyne.NewSize(200, 50), saveBtn)),
 	)
 

@@ -325,7 +325,24 @@ func (t *tileWidget) MouseDown(ev *desktop.MouseEvent) {
 		
 		anim := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 600*time.Millisecond, func(p fyne.Position) {
 			v := p.X
-			size := float32(10) + (v * 400)
+			distX := center.X
+			if t.bg.Size().Width-center.X < distX {
+				distX = t.bg.Size().Width - center.X
+			}
+			distY := center.Y
+			if t.bg.Size().Height-center.Y < distY {
+				distY = t.bg.Size().Height - center.Y
+			}
+			maxSize := distX
+			if distY < maxSize {
+				maxSize = distY
+			}
+			maxSize *= 2 // max diameter
+
+			if maxSize < 10 {
+				maxSize = 10 // fallback
+			}
+			size := float32(10) + (v * maxSize)
 			wave.Resize(fyne.NewSize(size, size))
 			wave.Move(fyne.NewPos(center.X-size/2, center.Y-size/2))
 			wave.FillColor = color.NRGBA{R: 255, G: 255, B: 255, A: uint8(200 * (1-v))}

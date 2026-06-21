@@ -338,6 +338,9 @@ type GUIApp struct {
 	modalLayer   *fyne.Container
 	toastLayer   *fyne.Container
 	toastLayout  *toastLayout
+	
+	navItemsBox     *fyne.Container
+	navPublisherBtn *navButton
 }
 
 // ─── Custom Layouts ──────────────────────────────────────────────────────────
@@ -470,40 +473,69 @@ func (g *GUIApp) Run() {
 	versions := g.availableVersions()
 
 	// ── Log entry ─────────────────────────────────────────────────────────────
-	logEntry := widget.NewMultiLineEntry()
-	logEntry.Wrapping = fyne.TextWrapWord
+	logLbl := widget.NewLabel("")
+	logLbl.Wrapping = fyne.TextWrapWord
+	logScroll := container.NewScroll(logLbl)
+
+	autoScroll := true
+	var autoScrollCheck *widget.Check
+	autoScrollCheck = widget.NewCheck("Auto Scroll", func(on bool) {
+		autoScroll = on
+		if on {
+			logScroll.ScrollToBottom()
+		}
+	})
+	autoScrollCheck.SetChecked(true)
+
+
+	autoScrollCheck.SetChecked(true)
 
 	lastLineLbl := canvas.NewText("Ready.", gtTextSecondary)
 	lastLineLbl.TextSize = 11
 
+	var uiUpdateQueued bool
+
 	appendStatus := func(msg string, args ...any) {
 		line := fmt.Sprintf(msg, args...)
 		cleanLine := strings.TrimRight(line, "\r\n")
-		fyne.Do(func() {
-			logText.WriteString(cleanLine + "\n")
-			
-			// Prevent lag by truncating to last 1000 lines
-			str := logText.String()
-			newlineCount := strings.Count(str, "\n")
-			if newlineCount > 1000 {
-				idx := 0
-				for i := 0; i < newlineCount-1000; i++ {
-					nextIdx := strings.Index(str[idx:], "\n")
-					if nextIdx == -1 { break }
-					idx += nextIdx + 1
-				}
-				newStr := str[idx:]
-				logText.Reset()
-				logText.WriteString(newStr)
-				str = newStr
-				newlineCount = 1000
+		
+		mu.Lock()
+		logText.WriteString(cleanLine + "\n")
+		
+		str := logText.String()
+		newlineCount := strings.Count(str, "\n")
+		if newlineCount > 1000 {
+			idx := 0
+			for i := 0; i < newlineCount-1000; i++ {
+				nextIdx := strings.Index(str[idx:], "\n")
+				if nextIdx == -1 { break }
+				idx += nextIdx + 1
 			}
+			newStr := str[idx:]
+			logText.Reset()
+			logText.WriteString(newStr)
+			str = newStr
+		}
 
-			logEntry.SetText(str)
-			logEntry.CursorRow = newlineCount
-			logEntry.Refresh()
-			setCanvasText(lastLineLbl, cleanLine)
-		})
+		if !uiUpdateQueued {
+			uiUpdateQueued = true
+			go func() {
+				time.Sleep(50 * time.Millisecond) // Throttle to max 20 FPS
+				mu.Lock()
+				text := logText.String()
+				uiUpdateQueued = false
+				mu.Unlock()
+				
+				fyne.Do(func() {
+					logLbl.SetText(text)
+					if autoScroll {
+						logScroll.ScrollToBottom()
+					}
+					setCanvasText(lastLineLbl, cleanLine)
+				})
+			}()
+		}
+		mu.Unlock()
 	}
 	appendStatus("Ready.")
 	go g.validateConfiguredPackSHAs(appendStatus)
@@ -547,6 +579,12 @@ func (g *GUIApp) Run() {
 		})
 		anim.Curve = fyne.AnimationEaseOut
 		anim.Start()
+		
+		if id == panelPublisher {
+			animateWindowResize(win, fyne.NewSize(1000, 680), 250*time.Millisecond)
+		} else {
+			animateWindowResize(win, fyne.NewSize(920, 560), 250*time.Millisecond)
+		}
 	}
 
 	// ── Version selector (pack mode only) ─────────────────────────────────────
@@ -778,9 +816,6 @@ func (g *GUIApp) Run() {
 	})
 
 	// ── Install flow (wired to actionBtn.onTap) ───────────────────────────────
-	compileWindowSize := fyne.NewSize(960, 620)
-	resultWindowSize := fyne.NewSize(920, 560)
-
 	doInstall := func() {
 		if projectPath == "" {
 			found := findUProjectUpwards()
@@ -836,9 +871,6 @@ func (g *GUIApp) Run() {
 		}
 
 		appendStatus("Starting %s for pack version %s", action, selectedVersion)
-		if strings.EqualFold(g.config.PackType, "code") {
-			animateWindowResize(win, compileWindowSize, 360*time.Millisecond)
-		}
 
 		installCtx, cancelInstall := context.WithCancel(context.Background())
 		mu.Lock()
@@ -862,9 +894,6 @@ func (g *GUIApp) Run() {
 				actionBtn.SetEnabled(true)
 
 				if err != nil && errors.Is(err, context.Canceled) {
-					if strings.EqualFold(g.config.PackType, "code") {
-						animateWindowResize(win, fyne.NewSize(920, 560), 260*time.Millisecond)
-					}
 					appendStatus("Installation canceled")
 					if refreshPlanState != nil {
 						refreshPlanState()
@@ -873,9 +902,6 @@ func (g *GUIApp) Run() {
 				}
 
 				if err != nil {
-					if strings.EqualFold(g.config.PackType, "code") {
-						animateWindowResize(win, resultWindowSize, 220*time.Millisecond)
-					}
 					appendStatus("Installation failed: %v", err)
 					resultActionLabel := ""
 					var resultAction func()
@@ -892,9 +918,6 @@ func (g *GUIApp) Run() {
 					return
 				}
 
-				if strings.EqualFold(g.config.PackType, "code") {
-					animateWindowResize(win, resultWindowSize, 220*time.Millisecond)
-				}
 				g.installSucceeded = true
 				appendStatus("Installation completed successfully")
 
@@ -951,7 +974,10 @@ func (g *GUIApp) Run() {
 	// Installer panel
 	installerPanel := g.buildInstallerPanel(win, iconRes,
 		isPackless, projectEntry, browseBtn, versionSelectRow,
-		engineVal, statusCard, actionBtn, exitBtn, logEntry, lastLineLbl)
+		engineVal, statusCard, actionBtn, exitBtn,
+		logScroll,
+		lastLineLbl,
+		autoScrollCheck)
 	panelObjs[panelInstaller] = installerPanel
 
 	// SHA panel (hidden in packless mode)
@@ -1029,7 +1055,16 @@ func (g *GUIApp) Run() {
 	}
 	navItems.Add(futureDivider)
 	navItems.Add(navProjMgr)
-	navItems.Add(navPublisher)
+	
+	appSettings, _ := settings.LoadSettings()
+	if appSettings.DevMode {
+		navItems.Add(navPublisher)
+	}
+
+	// Make navItems and navPublisher globally accessible for settings panel if we want real-time toggle
+	// We can use a package-level variable or just require app restart. We'll use a package variable.
+	g.navItemsBox = navItems
+	g.navPublisherBtn = navPublisher
 
 	sidebarContent := container.NewBorder(navItems, container.NewPadded(navSettings), nil, nil, nil)
 	sidebar := container.NewStack(newGTRoundedSurface(gtSidebar, 20, sidebarContent))
@@ -1128,11 +1163,20 @@ func (g *GUIApp) Run() {
 		}
 	}
 
-	appSettings, _ := settings.LoadSettings()
-	if appSettings.InstalledNatively {
+	appSettings, _ = settings.LoadSettings()
+	
+	// Apply ForceHTTP setting
+	if appSettings.ForceHTTP {
+		api.BaseURL = "http://api.gorgeous.simsalabim.studio/api/v1"
+		api.IsDevMode = true
+		api.IsOffline = false
+	}
+
+	skipUpdateCheck := appSettings.DevMode && !appSettings.InstalledNatively
+	if !skipUpdateCheck {
 		go func() {
 			time.Sleep(2 * time.Second) // Wait for boot anim
-			newVer, ok := updater.CheckForUpdates(buildinfo.Version)
+			newVer, ok := updater.CheckForUpdates(buildinfo.Version, appSettings.InstalledNatively)
 			if ok {
 				fyne.Do(func() {
 					g.showUpdateToast(newVer, func() {
@@ -1162,7 +1206,7 @@ func (g *GUIApp) Run() {
 	playBootSequence(win, iconRes, isPackless, mainShell)
 	startRoundedWindowStyling(win.Title(), 32)
 	
-	if (g.AutoBuildProject || g.VerifyCompat) && g.ProjectPath != "" && !isPackless {
+	if (g.AutoBuildProject || g.VerifyCompat) && g.ProjectPath != "" {
 		taskType := ProjectTaskAutoLaunch
 		if g.VerifyCompat {
 			taskType = ProjectTaskVerifyCompat
@@ -1176,6 +1220,8 @@ func (g *GUIApp) Run() {
 	}
 
 	win.ShowAndRun()
+
+	unreal.KillUBT()
 
 	if (g.recompileOnly || isPackless) && !g.installSucceeded {
 		os.Exit(1)
@@ -1218,8 +1264,9 @@ func (g *GUIApp) buildInstallerPanel(
 	statusCard fyne.CanvasObject,
 	actionBtn *accentButton,
 	exitBtn *widget.Button,
-	logEntry *widget.Entry,
+	logScroll *container.Scroll,
 	lastLineLbl *canvas.Text,
+	autoScrollCheck *widget.Check,
 ) fyne.CanvasObject {
 
 	// ── Shared log drawer ─────────────────────────────────────────────────────
@@ -1227,7 +1274,13 @@ func (g *GUIApp) buildInstallerPanel(
 	var toggleBtn *widget.Button
 
 	logLayout := &logAnimLayout{height: 140}
-	animLogContainer := container.New(logLayout, logEntry)
+	
+	// Create visual bounds similar to widget.Entry to satisfy "without changing actual log box" visually
+	logBoxBg := newGTRoundedSurface(withAlpha(gtBg0, 100), 4, nil)
+	paddedLogScroll := container.NewPadded(logScroll)
+	logContainer := container.NewStack(logBoxBg, paddedLogScroll)
+	
+	animLogContainer := container.New(logLayout, logContainer)
 
 	toggleBtn = widget.NewButtonWithIcon("", theme.MenuDropUpIcon(), func() {
 		if logExpanded {
@@ -1264,7 +1317,7 @@ func (g *GUIApp) buildInstallerPanel(
 	lastLineLbl.Hide() // hidden when expanded
 
 	drawerHeader := container.NewBorder(nil, nil,
-		container.NewHBox(logTitle),
+		container.NewHBox(logTitle, autoScrollCheck),
 		toggleBtn,
 		lastLineLbl,
 	)
@@ -1510,17 +1563,17 @@ func (g *GUIApp) buildSHAValidatorPanel(
 
 				if validateErr != nil {
 					appendStatus("SHA validation failed: %v", validateErr)
-					g.showInstallResult(false, validateErr.Error(), iconRes, "", nil, "Close", backToShell, "sha validation")
+					g.showInstallResult(false, validateErr.Error(), iconRes, "", nil, "Close", func(){}, "sha validation")
 					return
 				}
 				resultMessage := formatSHAValidationMessage(report)
 				if report.IsValid() {
 					appendStatus("SHA validation successful for %s", report.PackVersion)
-					g.showInstallResult(true, resultMessage, iconRes, "", nil, "Close", backToShell, "sha validation")
+					g.showInstallResult(true, resultMessage, iconRes, "", nil, "Close", func(){}, "sha validation")
 					return
 				}
 				appendStatus("SHA validation reported differences for %s", report.PackVersion)
-				g.showInstallResult(false, resultMessage, iconRes, "", nil, "Close", backToShell, "sha validation")
+				g.showInstallResult(false, resultMessage, iconRes, "", nil, "Close", func(){}, "sha validation")
 			})
 		}(selectedPack, manifestPath)
 	})
@@ -1800,6 +1853,8 @@ func (g *GUIApp) showInstallResult(success bool, message string, iconRes fyne.Re
 		closeLabel = "Close Installer"
 	}
 	closeBtn := widget.NewButton(closeLabel, func() {
+		g.modalLayer.Objects = nil
+		g.modalLayer.Refresh()
 		if onClose != nil {
 			onClose()
 			return
@@ -2800,10 +2855,12 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 		cancelFunc()
 		statusLbl.SetText("Canceling...")
 		unreal.KillUBT()
-		if taskType == ProjectTaskAutoLaunch {
-			os.Exit(0)
-		} else if taskType == ProjectTaskVerifyCompat {
-			os.Exit(2)
+		if taskType == ProjectTaskAutoLaunch || taskType == ProjectTaskVerifyCompat {
+			if g.win != nil {
+				g.win.Close()
+			} else {
+				os.Exit(2)
+			}
 		}
 	})
 	cancelBtn.Importance = widget.DangerImportance
@@ -2812,7 +2869,15 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 		cancelFunc()
 		unreal.KillUBT()
 		if taskType == ProjectTaskAutoLaunch || taskType == ProjectTaskVerifyCompat {
-			os.Exit(2) // 2 indicates aborted
+			if g.win != nil {
+				g.win.Close()
+			} else {
+				if g.installSucceeded {
+					os.Exit(0)
+				} else {
+					os.Exit(2)
+				}
+			}
 		} else {
 			g.dismissModal()
 		}
@@ -2995,8 +3060,15 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 					unreal.OpenProject(projectPath)
 					os.Exit(0)
 				} else if taskType == ProjectTaskVerifyCompat {
+					g.installSucceeded = true
 					logFn("Compilation successful. Returning to Unreal Engine...")
-					os.Exit(0) // Return 0 to tell Engine the binaries are ready
+					time.AfterFunc(2*time.Second, func() {
+						fyne.Do(func() {
+							if g.win != nil {
+								g.win.Close()
+							}
+						})
+					})
 				} else {
 					closeBtn.SetLabel("Done")
 					closeBtn.SetAccent(accentSuccess)
