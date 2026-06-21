@@ -22,15 +22,23 @@ if ! command -v gcc &> /dev/null; then
     exit 1
 fi
 
-export CGO_ENABLED="1"
-export CC="gcc"
-export CXX="g++"
+export CGO_ENABLED=${CGO_ENABLED:-"1"}
+export CC=${CC:-"gcc"}
+export CXX=${CXX:-"g++"}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+GOOS=${GOOS:-$(go env GOOS)}
+GOARCH=${GOARCH:-$(go env GOARCH)}
+export GOOS GOARCH
+
 BUILD_DIR="$SCRIPT_DIR/build"
-EXE_PATH="$BUILD_DIR/gorgeous-installer"
+if [ "$GOOS" = "windows" ]; then
+    EXE_PATH="$BUILD_DIR/gorgeous-installer.exe"
+else
+    EXE_PATH="$BUILD_DIR/gorgeous-installer"
+fi
 
 if [ "$USE_UPX" = true ] && [ "$SKIP_UPX" = true ]; then
     echo "--use-upx and --skip-upx cannot be used together"

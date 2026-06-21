@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"gorgeous-installer/internal/buildinfo"
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/updater"
 	"os"
@@ -101,7 +102,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 	// Update Section
 	var updateSection fyne.CanvasObject
 	if appSettings.InstalledNatively {
-		newVer, ok := updater.CheckForUpdates("1.2.0")
+		newVer, ok := updater.CheckForUpdates(buildinfo.Version)
 		if ok {
 			updateBtn := newAccentButton("Update to v"+newVer, accentUpdate, func() {
 				err := updater.PerformUpdate(appSettings.LocalBinPath + "/gorgeous-installer")

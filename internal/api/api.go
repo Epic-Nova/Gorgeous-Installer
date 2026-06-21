@@ -16,6 +16,7 @@ import (
 var (
 	BaseURL     = "https://api.gorgeous.simsalabim.studio/api/v1"
 	IsDevMode   = false
+	IsOffline   = false
 	httpClient  = &http.Client{Timeout: 10 * time.Second}
 )
 
@@ -23,11 +24,23 @@ func init() {
 	// Probe for dev mode fallback
 	resp, err := http.Get("https://api.gorgeous.simsalabim.studio/")
 	if err != nil || resp.TLS == nil {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		// Try HTTP
 		resp, err = http.Get("http://api.gorgeous.simsalabim.studio/")
 		if err == nil {
+			if resp.Body != nil {
+				resp.Body.Close()
+			}
 			BaseURL = "http://api.gorgeous.simsalabim.studio/api/v1"
 			IsDevMode = true
+		} else {
+			IsOffline = true
+		}
+	} else {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
 		}
 	}
 }

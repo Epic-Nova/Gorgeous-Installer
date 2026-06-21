@@ -11,63 +11,16 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"gorgeous-installer/internal/config"
 )
 
 type versionEntry struct {
-	ueVer   string
-	sysVer  string
+	ueVer      string
+	sourcePath string
 }
 
-func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemManifest, sourcePath string, appendStatus func(string, ...any)) {
-	if manifest == nil {
-		return
-	}
-
-	entriesBox := container.NewVBox()
-
-	var versions []versionEntry
-
-	var updateList func()
-	updateList = func() {
-		entriesBox.Objects = nil
-		for i, v := range versions {
-			idx := i
-			lbl := widget.NewLabel(fmt.Sprintf("Engine %s -> Sys v%s", v.ueVer, v.sysVer))
-			delBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-				versions = append(versions[:idx], versions[idx+1:]...)
-				updateList()
-			})
-			entriesBox.Add(container.NewHBox(lbl, layout.NewSpacer(), delBtn))
-		}
-		entriesBox.Refresh()
-	}
-
-	ueVerEntry := widget.NewEntry()
-	ueVerEntry.SetPlaceHolder("e.g. 5.4")
-	
-	sysVerEntry := widget.NewEntry()
-	sysVerEntry.SetPlaceHolder("System version, e.g. 1.0.0")
-	sysVerEntry.SetText(manifest.Version)
-
-	addBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), func() {
-		if ueVerEntry.Text == "" || sysVerEntry.Text == "" {
-			return
-		}
-		versions = append(versions, versionEntry{ueVer: ueVerEntry.Text, sysVer: sysVerEntry.Text})
-		ueVerEntry.SetText("")
-		updateList()
-	})
-
-	inputRow := container.NewHBox(
-		widget.NewLabel("UE Ver:"), container.NewGridWrap(fyne.NewSize(60, 35), ueVerEntry),
-		widget.NewLabel("Sys Ver:"), container.NewGridWrap(fyne.NewSize(80, 35), sysVerEntry),
-		addBtn,
-	)
-
+func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemManifest, versions []versionEntry, sysVer string, appendStatus func(string, ...any)) {
 	outDirEntry := widget.NewEntry()
 	outDirEntry.SetPlaceHolder("Output Directory")
 	
@@ -79,11 +32,16 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemMan
 		}, win)
 	})
 
+	var titleText string
+	if manifest != nil {
+		titleText = fmt.Sprintf("Offline Builder for %s", manifest.Name)
+	} else {
+		titleText = "Offline Builder"
+	}
+
 	content := container.NewVBox(
-		widget.NewLabel(fmt.Sprintf("Offline Builder for %s", manifest.Name)),
-		widget.NewLabel("Map Engine versions to System versions for the installer:"),
-		container.NewPadded(container.NewVScroll(entriesBox)),
-		inputRow,
+		widget.NewLabel(titleText),
+		widget.NewLabel("Select output directory for the standalone installer:"),
 		widget.NewSeparator(),
 		container.NewHBox(widget.NewLabel("Output:"), container.NewGridWrap(fyne.NewSize(300, 35), outDirEntry), browseBtn),
 	)
@@ -101,18 +59,46 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemMan
 			return
 		}
 
-		go g.runOfflinePublish(win, versions, outDirEntry.Text, manifest, sourcePath, appendStatus)
+		go g.runOfflinePublish(win, versions, sysVer, outDirEntry.Text, manifest, appendStatus)
 	}, win)
-	d.Resize(fyne.NewSize(550, 400))
+	d.Resize(fyne.NewSize(550, 200))
 	d.Show()
 }
 
-func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, outDir string, manifest *SystemManifest, sourcePath string, appendStatus func(string, ...any)) {
+func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
+	var manifestID string
+	var manifestName string
+
+	if manifest != nil {
+		manifestID = manifest.ID
+		manifestName = manifest.Name
+	} else {
+		// Read from the first version entry
+		if len(versions) > 0 {
+			manifestPath := filepath.Join(versions[0].sourcePath, "SystemManifest.json")
+			manifestData, err := os.ReadFile(manifestPath)
+			if err == nil {
+				var localManifest SystemManifest
+				if json.Unmarshal(manifestData, &localManifest) == nil {
+					manifestID = localManifest.ID
+					manifestName = localManifest.Name
+				}
+			}
+		}
+	}
+
+	if manifestID == "" {
+		manifestID = "OfflinePack"
+	}
+	if manifestName == "" {
+		manifestName = "Offline Pack"
+	}
+
 	var progress *dialog.CustomDialog
 	var statusLbl *widget.Label
 
 	fyne.Do(func() {
-		statusLbl = widget.NewLabel("Starting offline publish build for " + manifest.Name + "...")
+		statusLbl = widget.NewLabel("Starting offline publish build for " + manifestName + "...")
 		statusLbl.Wrapping = fyne.TextWrapWord
 		progBar := widget.NewProgressBarInfinite()
 		content := container.NewVBox(statusLbl, progBar)
@@ -130,7 +116,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 		})
 	}
 
-	updateStatus("Starting offline publish build for %s", manifest.Name)
+	updateStatus("Starting offline publish build for %s", manifestName)
 
 	tempDir, err := os.MkdirTemp("", "gorgeous-offline-*")
 	if err != nil {
@@ -151,41 +137,85 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 
 	var availVersions []config.PackVersion
 
-	pluginRoot := sourcePath
-	for pluginRoot != "" && pluginRoot != string(filepath.Separator) && pluginRoot != "." {
-		matches, _ := filepath.Glob(filepath.Join(pluginRoot, "*.uplugin"))
+	// Determine actualPluginName from first version's sourcePath
+	firstPluginRoot := versions[0].sourcePath
+	for firstPluginRoot != "" && firstPluginRoot != string(filepath.Separator) && firstPluginRoot != "." {
+		matches, _ := filepath.Glob(filepath.Join(firstPluginRoot, "*.uplugin"))
 		if len(matches) > 0 {
 			break
 		}
-		parent := filepath.Dir(pluginRoot)
-		if parent == pluginRoot {
-			pluginRoot = sourcePath
+		parent := filepath.Dir(firstPluginRoot)
+		if parent == firstPluginRoot {
+			firstPluginRoot = versions[0].sourcePath
 			break
 		}
-		pluginRoot = parent
+		firstPluginRoot = parent
 	}
-	actualPluginName := filepath.Base(pluginRoot)
+	actualPluginName := filepath.Base(firstPluginRoot)
 
 	for _, v := range versions {
-		updateStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, v.sysVer)
-		packName := fmt.Sprintf("%s-%s", manifest.ID, v.ueVer)
+		updateStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, sysVer)
+		
+		manifestPath := filepath.Join(v.sourcePath, "SystemManifest.json")
+		manifestData, err := os.ReadFile(manifestPath)
+		if err != nil {
+			updateStatus("Failed to read manifest for UE %s in %s: %v", v.ueVer, v.sourcePath, err)
+			return
+		}
+		var localManifest SystemManifest
+		if err := json.Unmarshal(manifestData, &localManifest); err != nil {
+			updateStatus("Failed to parse manifest for UE %s: %v", v.ueVer, err)
+			return
+		}
+
+		packName := fmt.Sprintf("%s-%s", manifestID, v.ueVer)
 		packPath := filepath.Join(packsDir, packName)
 		os.MkdirAll(packPath, 0755)
 
-		var pathsToCopy []string
-		if len(manifest.PayloadPaths) > 0 {
-			for _, p := range manifest.PayloadPaths {
-				pathsToCopy = append(pathsToCopy, filepath.Join(pluginRoot, p))
+		vPluginRoot := v.sourcePath
+		for vPluginRoot != "" && vPluginRoot != string(filepath.Separator) && vPluginRoot != "." {
+			matches, _ := filepath.Glob(filepath.Join(vPluginRoot, "*.uplugin"))
+			if len(matches) > 0 {
+				break
 			}
-		} else {
-			pathsToCopy = []string{pluginRoot + "/."}
+			parent := filepath.Dir(vPluginRoot)
+			if parent == vPluginRoot {
+				vPluginRoot = v.sourcePath
+				break
+			}
+			vPluginRoot = parent
 		}
 
-		for _, src := range pathsToCopy {
-			cmdCp := exec.Command("cp", "-R", src, packPath+"/")
-			if err := cmdCp.Run(); err != nil {
-				updateStatus("Copy failed for UE %s: %v", v.ueVer, err)
-				return
+		var pathsToCopy []string
+		if len(localManifest.PayloadPaths) > 0 {
+			for _, p := range localManifest.PayloadPaths {
+				pathsToCopy = append(pathsToCopy, p)
+			}
+		} else {
+			pathsToCopy = []string{"."}
+		}
+
+		for _, relPath := range pathsToCopy {
+			src := filepath.Join(vPluginRoot, relPath)
+			dst := filepath.Join(packPath, relPath)
+			
+			if info, err := os.Stat(src); err == nil {
+				if info.IsDir() {
+					os.MkdirAll(dst, 0755)
+					if err := copyDir(src, dst); err != nil {
+						updateStatus("Copy dir failed for UE %s (src: %s): %v", v.ueVer, src, err)
+						return
+					}
+				} else {
+					os.MkdirAll(filepath.Dir(dst), 0755)
+					if err := copyFile(src, dst); err != nil {
+						updateStatus("Copy file failed for UE %s (src: %s): %v", v.ueVer, src, err)
+						return
+					}
+				}
+			} else {
+				updateStatus("Warning: Path not found: %s. Skipping...", src)
+				continue
 			}
 		}
 
@@ -198,7 +228,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 
 	updateStatus("Generating config.json...")
 	cfg := config.Config{
-		PackName:          manifest.ID,
+		PackName:          manifestID,
 		PackType:          "hybrid",
 		PluginName:        actualPluginName,
 		AvailableVersions: availVersions,
@@ -206,28 +236,47 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, out
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 	os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
 
-	updateStatus("Compiling gorgeous-installer binary for Windows...")
-	outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifest.ID))
+	updateStatus("Compiling gorgeous-installer binary via build.sh (Windows)...")
+	outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifestID))
 	
-	cmdBuild := exec.Command("go", "build", "-ldflags", "-s -w", "-o", outExe, "./cmd/main")
+	cmdBuild := exec.Command("bash", "./build.sh")
 	cmdBuild.Dir = tempDir
 	cmdBuild.Env = append(os.Environ(), "GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1", "CC=x86_64-w64-mingw32-gcc", "CXX=x86_64-w64-mingw32-g++")
-	if _, err := cmdBuild.CombinedOutput(); err != nil {
-		updateStatus("Windows build skipped or failed: %v\n(Note: Cross-compiling Fyne to Windows on Linux requires 'gcc-mingw-w64' installed)", err)
+	if out, err := cmdBuild.CombinedOutput(); err != nil {
+		updateStatus("Windows build skipped or failed: %v\n%s\n(Note: Cross-compiling Fyne to Windows on Linux requires 'gcc-mingw-w64' installed)", err, string(out))
 	} else {
-		updateStatus("Windows build successful!")
+		srcExe := filepath.Join(tempDir, "build", "gorgeous-installer.exe")
+		if err := copyFile(srcExe, outExe); err != nil {
+			updateStatus("Failed to copy Windows binary: %v", err)
+		} else {
+			updateStatus("Windows build successful!")
+		}
 	}
 
 	updateStatus("Compiling gorgeous-installer binary via build.sh (Linux)...")
-	outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifest.ID))
+	outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifestID))
 	cmdBuildLin := exec.Command("bash", "./build.sh")
 	cmdBuildLin.Dir = tempDir
 	if out, err := cmdBuildLin.CombinedOutput(); err != nil {
 		updateStatus("Linux build failed: %v\n%s", err, string(out))
 	} else {
 		srcBin := filepath.Join(tempDir, "build", "gorgeous-installer")
-		copyFile(srcBin, outBin)
-		os.Chmod(outBin, 0755)
+		if err := copyFile(srcBin, outBin); err != nil {
+			updateStatus("Failed to copy Linux binary: %v", err)
+		} else {
+			os.Chmod(outBin, 0755)
+			updateStatus("Linux build successful!")
+		}
+	}
+
+	updateStatus("Copying packs and SHA files to output directory...")
+	outPacksDir := filepath.Join(outDir, "packs")
+	os.MkdirAll(outPacksDir, 0755)
+	cmdCpPacks := exec.Command("cp", "-R", filepath.Join(packsDir, "."), outPacksDir+"/")
+	if err := cmdCpPacks.Run(); err != nil {
+		updateStatus("Failed to copy packs to output directory: %v", err)
+	} else {
+		updateStatus("Packs and SHA files copied successfully.")
 	}
 
 	updateStatus("Offline publisher build completed! Files written to %s", outDir)
@@ -253,4 +302,21 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, os.ModePerm)
+		}
+		return copyFile(path, target)
+	})
 }

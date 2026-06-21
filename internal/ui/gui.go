@@ -30,6 +30,7 @@ import (
 
 	bundle "gorgeous-installer"
 	"gorgeous-installer/internal/api"
+	"gorgeous-installer/internal/buildinfo"
 	"gorgeous-installer/internal/config"
 	"gorgeous-installer/internal/installer"
 	"gorgeous-installer/internal/settings"
@@ -782,8 +783,13 @@ func (g *GUIApp) Run() {
 
 	doInstall := func() {
 		if projectPath == "" {
-			g.showAnimatedDialog("Error", "please select a .uproject file first", true)
-			return
+			found := findUProjectUpwards()
+			if found != "" {
+				loadProject(found)
+			} else {
+				g.showAnimatedDialog("Error", "please select a .uproject file first", true)
+				return
+			}
 		}
 
 		selectedVersion := currentSelectedVersion(autoPackVersion, manualVersionSel, versionSelect)
@@ -1110,9 +1116,12 @@ func (g *GUIApp) Run() {
 	})
 
 	// ── Pre-fill project (verify-compatibility mode) ──────────────────────────
+	if g.ProjectPath == "" {
+		g.ProjectPath = findUProjectUpwards()
+	}
 	if g.ProjectPath != "" {
 		loadProject(g.ProjectPath)
-		if !g.AutoBuildProject && !g.VerifyCompat && (g.recompileOnly || isPackless) {
+		if !g.AutoBuildProject && !g.VerifyCompat && g.recompileOnly && !isPackless {
 			time.AfterFunc(800*time.Millisecond, func() {
 				fyne.Do(func() { actionBtn.Trigger() })
 			})
@@ -1123,7 +1132,7 @@ func (g *GUIApp) Run() {
 	if appSettings.InstalledNatively {
 		go func() {
 			time.Sleep(2 * time.Second) // Wait for boot anim
-			newVer, ok := updater.CheckForUpdates("1.2.0")
+			newVer, ok := updater.CheckForUpdates(buildinfo.Version)
 			if ok {
 				fyne.Do(func() {
 					g.showUpdateToast(newVer, func() {
@@ -1134,7 +1143,14 @@ func (g *GUIApp) Run() {
 		}()
 	}
 
-	if api.IsDevMode {
+	if api.IsOffline {
+		go func() {
+			time.Sleep(4 * time.Second) // Stagger slightly after boot anim
+			fyne.Do(func() {
+				g.showOfflineToast()
+			})
+		}()
+	} else if api.IsDevMode {
 		go func() {
 			time.Sleep(4 * time.Second) // Stagger slightly after boot anim
 			fyne.Do(func() {
@@ -1146,7 +1162,7 @@ func (g *GUIApp) Run() {
 	playBootSequence(win, iconRes, isPackless, mainShell)
 	startRoundedWindowStyling(win.Title(), 32)
 	
-	if (g.AutoBuildProject || g.VerifyCompat) && g.ProjectPath != "" {
+	if (g.AutoBuildProject || g.VerifyCompat) && g.ProjectPath != "" && !isPackless {
 		taskType := ProjectTaskAutoLaunch
 		if g.VerifyCompat {
 			taskType = ProjectTaskVerifyCompat
@@ -2093,14 +2109,14 @@ func chooseClosestVersion(engineVersion string, versions []string) string {
 		}
 	}
 	engineMajor, engineMinor := parseVersion(normalized)
-	best := versions[0]
-	bestMajor, bestMinor := parseVersion(best)
+	var best string
+	var bestMajor, bestMinor int
 	for _, v := range versions {
 		major, minor := parseVersion(v)
 		if major > engineMajor || (major == engineMajor && minor > engineMinor) {
 			continue
 		}
-		if major > bestMajor || (major == bestMajor && minor > bestMinor) {
+		if best == "" || major > bestMajor || (major == bestMajor && minor > bestMinor) {
 			best = v
 			bestMajor = major
 			bestMinor = minor
@@ -2503,6 +2519,113 @@ func (g *GUIApp) showDevModeToast() {
 	})
 }
 
+func (g *GUIApp) showOfflineToast() {
+	g.toastLayer.Objects = nil
+	g.toastLayer.Refresh()
+
+	iconTxt := canvas.NewText("⚠️", color.NRGBA{R: 240, G: 165, B: 52, A: 255})
+	iconTxt.TextSize = 22
+	iconBox := container.NewCenter(iconTxt)
+
+	title := canvas.NewText("Offline Mode", gtTextPrimary)
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 14
+	
+	msg := canvas.NewText("We are offline and operating in HTTP is dangerous.", gtTextSecondary)
+	msg.TextSize = 12
+	
+	textCol := container.NewVBox(title, msg)
+	
+	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
+	
+	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
+	g.toastLayer.Add(toastCard)
+	g.toastLayer.Refresh()
+	
+	// Animate in by sliding up
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+		v := p.X
+		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
+		g.toastLayer.Refresh()
+	})
+	animIn.Curve = fyne.AnimationEaseOut
+	animIn.Start()
+	
+	// Animate away
+	time.AfterFunc(8 * time.Second, func() {
+		fyne.Do(func() {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+				v := p.X
+				g.toastLayout.offsetY = 150 * v // slide back down
+				g.toastLayer.Refresh()
+			})
+			animOut.Curve = fyne.AnimationEaseIn
+			animOut.Start()
+			
+			time.AfterFunc(450*time.Millisecond, func() {
+				fyne.Do(func() {
+					g.toastLayer.Remove(toastCard)
+					g.toastLayer.Refresh()
+				})
+			})
+		})
+	})
+}
+
+func (g *GUIApp) showLaunchToast(projName string) {
+	g.toastLayer.Objects = nil
+	g.toastLayer.Refresh()
+
+	iconTxt := canvas.NewText("🚀", color.White)
+	iconTxt.TextSize = 22
+	iconBox := container.NewCenter(iconTxt)
+
+	title := canvas.NewText("Launching Project", gtTextPrimary)
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 14
+	
+	msg := canvas.NewText("Opening "+projName+" in Unreal Editor...", gtTextSecondary)
+	msg.TextSize = 12
+	
+	textCol := container.NewVBox(title, msg)
+	
+	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
+	
+	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
+	g.toastLayer.Add(toastCard)
+	g.toastLayer.Refresh()
+	
+	// Animate in by sliding up
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+		v := p.X
+		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
+		g.toastLayer.Refresh()
+	})
+	animIn.Curve = fyne.AnimationEaseOut
+	animIn.Start()
+	
+	// Animate away
+	time.AfterFunc(6 * time.Second, func() {
+		fyne.Do(func() {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+				v := p.X
+				g.toastLayout.offsetY = 150 * v // slide back down
+				g.toastLayer.Refresh()
+			})
+			animOut.Curve = fyne.AnimationEaseIn
+			animOut.Start()
+			
+			time.AfterFunc(450*time.Millisecond, func() {
+				fyne.Do(func() {
+					g.toastLayer.Remove(toastCard)
+					g.toastLayer.Refresh()
+				})
+			})
+		})
+	})
+}
+
+
 // ─── Animated Dialogs ────────────────────────────────────────────────────────
 
 type genericModalLayout struct {
@@ -2882,4 +3005,37 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 		})
 	}()
 }
+
+func findUProjectUpwards() string {
+	// 1. Try search from working directory
+	if dir, err := os.Getwd(); err == nil {
+		if path := findUProjectUpwardsFromDir(dir); path != "" {
+			return path
+		}
+	}
+	// 2. Try search from executable directory
+	if exePath, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exePath)
+		if path := findUProjectUpwardsFromDir(dir); path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+func findUProjectUpwardsFromDir(dir string) string {
+	for {
+		matches, err := filepath.Glob(filepath.Join(dir, "*.uproject"))
+		if err == nil && len(matches) > 0 {
+			return matches[0]
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
 

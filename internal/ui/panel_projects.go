@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -62,14 +64,23 @@ func (g *GUIApp) buildProjectsPanel(win fyne.Window, appendStatus func(string, .
 	projectsGrid := container.NewGridWrap(fyne.NewSize(192, 192))
 	scrollArea := container.NewScroll(projectsGrid)
 
+	var allTiles []*tileWidget
+
 	refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), func() {
 		projectsGrid.Objects = nil
 		projectsGrid.Refresh()
+		allTiles = nil
 		go func() {
 			projects := scanForProjects(appSettings.SearchPaths)
 			fyne.Do(func() {
 				for _, p := range projects {
-					projectsGrid.Add(buildProjectTile(g, win, p, appendStatus))
+					tileObj, tileW := buildProjectTile(g, win, p, appendStatus, func(selectedTile *tileWidget) {
+						for _, t := range allTiles {
+							t.SetSelected(t == selectedTile)
+						}
+					})
+					allTiles = append(allTiles, tileW)
+					projectsGrid.Add(tileObj)
 				}
 				if len(projects) == 0 {
 					projectsGrid.Add(newGTLabel("No projects found. Check your Search Paths in Settings."))
@@ -154,7 +165,7 @@ func scanForProjects(paths []string) []projectInfo {
 }
 
 // buildProjectTile creates a custom interactive tile for a project.
-func buildProjectTile(g *GUIApp, win fyne.Window, p projectInfo, appendStatus func(string, ...any)) fyne.CanvasObject {
+func buildProjectTile(g *GUIApp, win fyne.Window, p projectInfo, appendStatus func(string, ...any), onSelect func(*tileWidget)) (fyne.CanvasObject, *tileWidget) {
 	var thumbContainer fyne.CanvasObject
 	if p.ThumbnailPath != "" {
 		thumbContainer = createRoundedImage(p.ThumbnailPath, 192, 12)
@@ -199,14 +210,18 @@ func buildProjectTile(g *GUIApp, win fyne.Window, p projectInfo, appendStatus fu
 
 	tileContent := container.NewStack(thumbContainer, container.NewBorder(nil, bottomArea, nil, nil))
 
+	var tile *tileWidget
 	// We use a custom widget for interaction
-	tile := newTileWidget(tileContent, func() {
-		// Single tap - could highlight
+	tile = newTileWidget(tileContent, func() {
+		if onSelect != nil {
+			onSelect(tile)
+		}
 	}, func() {
 		// Double tap
 		if p.HasBinaries {
 			appendStatus("Opening project: %s", p.Name)
-			unreal.OpenProject(p.Path)
+			g.showLaunchToast(p.Name)
+			go unreal.OpenProject(p.Path)
 		} else {
 			g.showProjectTaskModal(p.Path, p.Name, ProjectTaskBuild)
 		}
@@ -222,28 +237,124 @@ func buildProjectTile(g *GUIApp, win fyne.Window, p projectInfo, appendStatus fu
 		widget.ShowPopUpMenuAtPosition(menu, win.Canvas(), ev.AbsolutePosition)
 	})
 
-	return newGTRoundedSurface(gtBg2, 12, tile)
+	return tile, tile
 }
 
 
 
-// tileWidget handles double click and right click
+// tileWidget handles selection, hover, double click and right click
 type tileWidget struct {
 	widget.BaseWidget
 	content    fyne.CanvasObject
 	onTap      func()
 	onDouble   func()
 	onRightTap func(*fyne.PointEvent)
+	selected   bool
+	bg         *canvas.Rectangle
+	overlay    *fyne.Container
 }
 
 func newTileWidget(content fyne.CanvasObject, onTap, onDouble func(), onRight func(*fyne.PointEvent)) *tileWidget {
-	t := &tileWidget{content: content, onTap: onTap, onDouble: onDouble, onRightTap: onRight}
+	bg := canvas.NewRectangle(gtBg2)
+	bg.CornerRadius = 12
+	overlay := container.NewWithoutLayout()
+	t := &tileWidget{
+		onTap:      onTap,
+		onDouble:   onDouble,
+		onRightTap: onRight,
+		bg:         bg,
+		overlay:    overlay,
+	}
+	t.content = container.NewStack(bg, content, overlay)
 	t.ExtendBaseWidget(t)
 	return t
 }
 
 func (t *tileWidget) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(t.content)
+}
+
+func (t *tileWidget) SetSelected(selected bool) {
+	t.selected = selected
+	if selected {
+		t.bg.FillColor = gtBg5
+		t.bg.StrokeColor = color.White
+		t.bg.StrokeWidth = 4
+	} else {
+		t.bg.FillColor = gtBg2
+		t.bg.StrokeColor = color.Transparent
+		t.bg.StrokeWidth = 0
+	}
+	t.bg.Refresh()
+	t.Refresh()
+}
+
+func (t *tileWidget) MouseIn(_ *desktop.MouseEvent) {
+	if !t.selected {
+		t.bg.FillColor = gtBg3
+		t.bg.Refresh()
+		t.Refresh()
+	}
+}
+
+func (t *tileWidget) MouseMoved(_ *desktop.MouseEvent) {}
+
+func (t *tileWidget) MouseOut() {
+	if !t.selected {
+		t.bg.FillColor = gtBg2
+		t.bg.Refresh()
+		t.Refresh()
+	}
+}
+
+func (t *tileWidget) MouseDown(ev *desktop.MouseEvent) {
+	if ev.Button == desktop.MouseButtonPrimary {
+		t.bg.FillColor = gtBg5
+		t.bg.StrokeColor = color.White
+		t.bg.StrokeWidth = 4
+		t.bg.Refresh()
+		t.Refresh()
+
+		wave := canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 200})
+		wave.CornerRadius = 200
+		center := ev.Position
+		wave.Resize(fyne.NewSize(10, 10))
+		wave.Move(fyne.NewPos(center.X-5, center.Y-5))
+		
+		t.overlay.Add(wave)
+		
+		anim := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 600*time.Millisecond, func(p fyne.Position) {
+			v := p.X
+			size := float32(10) + (v * 400)
+			wave.Resize(fyne.NewSize(size, size))
+			wave.Move(fyne.NewPos(center.X-size/2, center.Y-size/2))
+			wave.FillColor = color.NRGBA{R: 255, G: 255, B: 255, A: uint8(200 * (1-v))}
+			wave.Refresh()
+		})
+		anim.Curve = fyne.AnimationEaseOut
+		anim.Start()
+		
+		time.AfterFunc(650*time.Millisecond, func() {
+			fyne.Do(func() {
+				t.overlay.Remove(wave)
+				t.overlay.Refresh()
+			})
+		})
+	}
+}
+
+func (t *tileWidget) MouseUp(ev *desktop.MouseEvent) {
+	if !t.selected {
+		t.bg.FillColor = gtBg3
+		t.bg.StrokeColor = color.Transparent
+		t.bg.StrokeWidth = 0
+	} else {
+		t.bg.FillColor = gtBg5
+		t.bg.StrokeColor = color.White
+		t.bg.StrokeWidth = 4
+	}
+	t.bg.Refresh()
+	t.Refresh()
 }
 
 func (t *tileWidget) Tapped(ev *fyne.PointEvent) {
