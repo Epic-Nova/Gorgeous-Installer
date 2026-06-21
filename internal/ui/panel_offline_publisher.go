@@ -127,7 +127,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 	defer os.RemoveAll(tempDir)
 
 	updateStatus("Cloning Gorgeous Installer repository...")
-	cmdClone := exec.Command("git", "clone", "https://github.com/Epic-Nova/Gorgeous-Installer.git", tempDir)
+	cmdClone := exec.Command("git", "clone", "--depth", "1", "https://github.com/Epic-Nova/Gorgeous-Installer.git", tempDir)
 	if err := cmdClone.Run(); err != nil {
 		updateStatus("Git clone failed: %v", err)
 		return

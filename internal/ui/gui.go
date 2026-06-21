@@ -581,9 +581,9 @@ func (g *GUIApp) Run() {
 		anim.Start()
 		
 		if id == panelPublisher {
-			animateWindowResize(win, fyne.NewSize(1000, 680), 250*time.Millisecond)
+			win.Resize(fyne.NewSize(1000, 680))
 		} else {
-			animateWindowResize(win, fyne.NewSize(920, 560), 250*time.Millisecond)
+			win.Resize(fyne.NewSize(920, 560))
 		}
 	}
 
