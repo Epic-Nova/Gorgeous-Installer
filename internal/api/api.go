@@ -167,17 +167,19 @@ func GetPublishChallenge(systemId string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	var challengeResp ChallengeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&challengeResp); err != nil {
-		return "", err
-	}
-
-	if resp.StatusCode == 404 && challengeResp.Error == "SystemNotFound" {
+	if resp.StatusCode == 404 {
+		var challengeResp ChallengeResponse
+		json.NewDecoder(resp.Body).Decode(&challengeResp)
 		return challengeResp.Challenge, ErrSystemNotFound
 	}
 
 	if resp.StatusCode >= 400 {
 		return "", fmt.Errorf("failed to fetch challenge, status code %d", resp.StatusCode)
+	}
+
+	var challengeResp ChallengeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&challengeResp); err != nil {
+		return "", err
 	}
 
 	if !challengeResp.Success {
@@ -197,15 +199,16 @@ type SystemRegistrationData struct {
 	ContentPaths     []string
 }
 
-func PublishSystem(systemId, version, changelog, signature, checksum, payloadPath string, regData *SystemRegistrationData, sourcePaths []string, contentPaths []string) error {
+func PublishSystem(systemId, version, changelog, signature, checksum, payloadPath, minimumCoreVersion string, regData *SystemRegistrationData, sourcePaths []string, contentPaths []string) error {
 	// 1. Post metadata to get Upload URL
 	reqBody := PublishRequest{
-		Version:   version,
-		Changelog: changelog,
-		Signature: signature,
-		Checksum:  checksum,
-		SourcePaths: sourcePaths,
-		ContentPaths: contentPaths,
+		Version:            version,
+		Changelog:          changelog,
+		Signature:          signature,
+		Checksum:           checksum,
+		MinimumCoreVersion: minimumCoreVersion,
+		SourcePaths:        sourcePaths,
+		ContentPaths:       contentPaths,
 	}
 	
 	if regData != nil {
@@ -213,7 +216,9 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 		reqBody.DisplayName = regData.DisplayName
 		reqBody.Description = regData.Description
 		reqBody.IsCoreSystem = regData.IsCoreSystem
-		reqBody.MinimumCoreVersion = regData.MinimumCoreVersion
+		if regData.MinimumCoreVersion != "" {
+			reqBody.MinimumCoreVersion = regData.MinimumCoreVersion
+		}
 	}
 	jsonData, _ := json.Marshal(reqBody)
 

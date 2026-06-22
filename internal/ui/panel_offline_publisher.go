@@ -21,7 +21,7 @@ type versionEntry struct {
 	sourcePath string
 }
 
-func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string, manifest *SystemManifest, versions []versionEntry, sysVer string, appendStatus func(string, ...any)) {
+func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string, manifest *SystemManifest, versions []versionEntry, installerPath string, sysVer string, appendStatus func(string, ...any)) {
 	outDirEntry := widget.NewEntry()
 	outDirEntry.SetPlaceHolder("Output Directory")
 	
@@ -51,7 +51,7 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string,
 		if !ok {
 			return
 		}
-		if len(versions) == 0 {
+		if publishMode != "Installer Update" && len(versions) == 0 {
 			dialog.ShowError(fmt.Errorf("please add at least one version mapping"), win)
 			return
 		}
@@ -60,13 +60,13 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string,
 			return
 		}
 
-		go g.runOfflinePublish(win, publishMode, versions, sysVer, outDirEntry.Text, manifest, appendStatus)
+		go g.runOfflinePublish(win, publishMode, versions, installerPath, sysVer, outDirEntry.Text, manifest, appendStatus)
 	}, win)
 	d.Resize(fyne.NewSize(550, 200))
 	d.Show()
 }
 
-func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions []versionEntry, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
+func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions []versionEntry, installerPath string, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
 	var manifestID string
 	var manifestName string
 
@@ -118,6 +118,59 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	}
 
 	updateStatus("Starting offline publish build for %s", manifestName)
+
+	if publishMode == "Installer Update" {
+		updateStatus("Zipping Installer Update to output directory...")
+		outZip := filepath.Join(outDir, fmt.Sprintf("%s-%s.zip", manifestID, sysVer))
+		
+		var cmdZip *exec.Cmd
+		if manifestID == "GorgeousInstaller-Source" {
+			cmdZip = exec.Command("zip", "-r", outZip, ".", "-x", "build/*", "build", "*.exe", "*.syso", ".git/*", ".git", "*.log", "*.gti")
+			cmdZip.Dir = installerPath
+		} else {
+			var buildDir string
+			if filepath.Base(installerPath) == "build" {
+				buildDir = installerPath
+			} else {
+				buildDir = filepath.Join(installerPath, "build")
+				if _, err := os.Stat(buildDir); os.IsNotExist(err) {
+					if _, errBin := os.Stat(filepath.Join(installerPath, "gorgeous-installer")); errBin == nil {
+						buildDir = installerPath
+					} else if _, errExe := os.Stat(filepath.Join(installerPath, "gorgeous-installer.exe")); errExe == nil {
+						buildDir = installerPath
+					} else {
+						updateStatus("Build directory not found! Please compile binaries first.")
+						fyne.Do(func() {
+							if progress != nil {
+								progress.Hide()
+							}
+						})
+						return
+					}
+				}
+			}
+			cmdZip = exec.Command("zip", "-r", outZip, ".")
+			cmdZip.Dir = buildDir
+		}
+		
+		if err := cmdZip.Run(); err != nil {
+			updateStatus("Failed to zip Installer Update: %v", err)
+			fyne.Do(func() {
+				if progress != nil {
+					progress.Hide()
+				}
+			})
+			return
+		}
+		
+		fyne.Do(func() {
+			if progress != nil {
+				progress.Hide()
+			}
+			dialog.ShowInformation("Success", "Offline Installer Update package built at:\n"+outZip, win)
+		})
+		return
+	}
 
 	tempDir, err := os.MkdirTemp("", "gorgeous-offline-*")
 	if err != nil {
@@ -275,39 +328,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 	os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
 
-	if publishMode == "Installer Update" {
-		updateStatus("Zipping Installer Update to output directory...")
-		outZip := filepath.Join(outDir, fmt.Sprintf("%s-%s.zip", manifestID, sysVer))
-		
-		// For installer update, the payload is already in the packs directory
-		// We just zip the source directory directly!
-		var cmdZip *exec.Cmd
-		if manifestID == "GorgeousInstaller-Source" {
-			cmdZip = exec.Command("zip", "-r", outZip, ".", "-x", "build/*", "build", "*.exe", "*.syso", ".git/*", ".git", "*.log", "*.gti")
-			cmdZip.Dir = versions[0].sourcePath
-		} else {
-			buildDir := filepath.Join(versions[0].sourcePath, "build")
-			if _, err := os.Stat(buildDir); os.IsNotExist(err) {
-				updateStatus("Build directory not found! Please compile binaries first.")
-				return
-			}
-			cmdZip = exec.Command("zip", "-r", outZip, ".")
-			cmdZip.Dir = buildDir
-		}
-		
-		if err := cmdZip.Run(); err != nil {
-			updateStatus("Failed to zip Installer Update: %v", err)
-			return
-		}
-		
-		fyne.Do(func() {
-			if progress != nil {
-				progress.Hide()
-			}
-			dialog.ShowInformation("Success", "Offline Installer Update package built at:\n"+outZip, win)
-		})
-		return
-	}
+	// Installer Update bypass is handled at the beginning of the function
 
 	updateStatus("Compiling gorgeous-installer binary via build.sh (Windows)...")
 	outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifestID))

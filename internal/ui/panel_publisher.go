@@ -58,6 +58,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	changelogEntry.SetPlaceHolder("e.g. https://github.com/user/repo/releases/tag/v1.0.0")
 
 	var publishBtn, offlinePublishBtn *accentButton
+	installerType := "Source"
 	
 	// History List (Mock for now, will connect to API)
 	historyList := container.NewVBox(
@@ -374,19 +375,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 							return
 						}
 						
-						// We have reg data, now get challenge
-						challenge, err = api.GetPublishChallenge(sysID)
-						if err != nil {
-							fyne.Do(func() {
-								if progress != nil {
-									progress.Hide()
-								}
-								appendStatus("Failed to fetch challenge after registration: %v", err)
-								publishBtn.SetRunning(false)
-								publishBtn.SetEnabled(true)
-							})
-							return
-						}
+						// The challenge fetched from the first call is already valid and will be signed.
 					} else {
 						fyne.Do(func() {
 							if progress != nil {
@@ -767,9 +756,14 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				sysVer = "v" + sysVer
 			}
 
+			var minCoreVer string
+			if publishMode == "Plugin Update" && len(versions) > 0 {
+				minCoreVer = FindMinimumCoreVersion(versions[0].sourcePath)
+			}
+
 			// 4. Upload
 			updateStatus("4. Uploading payload and changelog to API...")
-			err = api.PublishSystem(sysID, sysVer, notes, signature, payloadChecksum, zipPath, regData, nil, nil)
+			err = api.PublishSystem(sysID, sysVer, notes, signature, payloadChecksum, zipPath, minCoreVer, regData, nil, nil)
 			if err != nil {
 				fyne.Do(func() {
 					if progress != nil {
@@ -796,20 +790,19 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		}()
 	}
 		
-	if publishMode == "Installer Update" {
-			dialog.ShowCustomConfirm("Installer Payload", "Source", "Binary", widget.NewLabel("Select the payload type for the Installer online package."), func(b bool) {
-				if b {
-					sysID = "GorgeousInstaller-Source"
-					sysName = "Gorgeous Installer (Source)"
-					sysDesc = "Core Installer Source"
-				} else {
-					sysID = "GorgeousInstaller-Binary"
-					sysName = "Gorgeous Installer (Binary)"
-					sysDesc = "Core Installer Binary"
-					isInstallerBinary = true
-				}
-				runPublish()
-			}, win)
+		if publishMode == "Installer Update" {
+			if installerType == "Source" {
+				sysID = "GorgeousInstaller-Source"
+				sysName = "Gorgeous Installer (Source)"
+				sysDesc = "Core Installer Source"
+				isInstallerBinary = false
+			} else {
+				sysID = "GorgeousInstaller-Bin"
+				sysName = "Gorgeous Installer (Binary)"
+				sysDesc = "Core Installer Binary"
+				isInstallerBinary = true
+			}
+			runPublish()
 			return
 		}
 
@@ -825,18 +818,40 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 	offlinePublishBtn = newAccentButton("Offline Publish", accentUpdate, func() {
 		sysVer := sysVerEntry.Text
+		var manifestToPass *SystemManifest = loadedManifest
+		
 		if publishMode == "Installer Update" {
 			sysVer = installerSysVerEntry.Text
+			if installerType == "Source" {
+				manifestToPass = &SystemManifest{
+					ID:   "GorgeousInstaller-Source",
+					Name: "Gorgeous Installer (Source)",
+				}
+			} else {
+				manifestToPass = &SystemManifest{
+					ID:   "GorgeousInstaller-Bin",
+					Name: "Gorgeous Installer (Binary)",
+				}
+			}
 		}
+		
 		if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
 			sysVer = "v" + sysVer
 		}
-		g.showOfflinePublisherDialog(win, publishMode, loadedManifest, versions, sysVer, appendStatus)
+		g.showOfflinePublisherDialog(win, publishMode, manifestToPass, versions, installerPathEntry.Text, sysVer, appendStatus)
 	})
 	offlinePublishBtn.SetEnabled(true)
 
+	installerType = "Source"
+	installerTypeSelector := widget.NewRadioGroup([]string{"Source", "Binary"}, func(s string) {
+		installerType = s
+	})
+	installerTypeSelector.Horizontal = true
+	installerTypeSelector.SetSelected("Source")
+
 	installerSection := newGTCard("Installer Source", "Select the root directory of the Gorgeous Installer codebase",
 		container.NewVBox(
+			container.NewHBox(widget.NewLabel("Payload Type:"), installerTypeSelector),
 			container.NewHBox(widget.NewLabel("Source Dir:"), container.NewGridWrap(fyne.NewSize(200, 35), installerPathEntry), widget.NewButton("Browse", func() {
 				dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
 					if lu != nil {
@@ -906,7 +921,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			changelogSection.Show()
 			publishBtn.Show()
 			if offlinePublishBtn != nil {
-				offlinePublishBtn.Hide()
+				offlinePublishBtn.Show()
 			}
 			manageSection.Hide()
 			publishBtn.SetEnabled(true)
