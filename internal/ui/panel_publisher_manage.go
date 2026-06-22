@@ -144,9 +144,11 @@ func (g *GUIApp) buildManageSection(win fyne.Window, appendStatus func(string, .
 		refreshList()
 	})
 
-	header := container.NewHBox(widget.NewLabelWithStyle("Registered Packs & Systems", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), layout.NewSpacer(), container.NewGridWrap(fyne.NewSize(100, 35), refreshBtn))
+	header := container.NewHBox(layout.NewSpacer(), container.NewGridWrap(fyne.NewSize(100, 35), refreshBtn))
 
-	manageSection := container.NewBorder(header, nil, nil, nil, container.NewVScroll(listVBox))
+	manageSection := newGTCard("Registered Packs & Systems", "Manage and edit existing release metadata",
+		container.NewBorder(header, nil, nil, nil, listVBox),
+	)
 	
 	// initial load
 	refreshList()
