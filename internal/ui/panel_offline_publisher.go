@@ -21,7 +21,7 @@ type versionEntry struct {
 	sourcePath string
 }
 
-func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemManifest, versions []versionEntry, sysVer string, appendStatus func(string, ...any)) {
+func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string, manifest *SystemManifest, versions []versionEntry, sysVer string, appendStatus func(string, ...any)) {
 	outDirEntry := widget.NewEntry()
 	outDirEntry.SetPlaceHolder("Output Directory")
 	
@@ -60,13 +60,13 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, manifest *SystemMan
 			return
 		}
 
-		go g.runOfflinePublish(win, versions, sysVer, outDirEntry.Text, manifest, appendStatus)
+		go g.runOfflinePublish(win, publishMode, versions, sysVer, outDirEntry.Text, manifest, appendStatus)
 	}, win)
 	d.Resize(fyne.NewSize(550, 200))
 	d.Show()
 }
 
-func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
+func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions []versionEntry, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
 	var manifestID string
 	var manifestName string
 
@@ -156,17 +156,26 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 
 	for _, v := range versions {
 		updateStatus("Packaging payload for UE %s (Sys %s)...", v.ueVer, sysVer)
-		
-		manifestPath := filepath.Join(v.sourcePath, "SystemManifest.json")
-		manifestData, err := os.ReadFile(manifestPath)
-		if err != nil {
-			updateStatus("Failed to read manifest for UE %s in %s: %v", v.ueVer, v.sourcePath, err)
-			return
-		}
 		var localManifest SystemManifest
-		if err := json.Unmarshal(manifestData, &localManifest); err != nil {
-			updateStatus("Failed to parse manifest for UE %s: %v", v.ueVer, err)
-			return
+		if publishMode == "Installer Update" {
+			// For Installer updates, we don't need a manifest file on disk. We just use the provided one.
+			localManifest = *manifest
+			localManifest.PayloadPaths = []string{"."}
+		} else if publishMode == "Plugin Update" {
+			// For Plugin Updates, we also don't use SystemManifest.json. We use the whole directory.
+			localManifest = *manifest
+			localManifest.PayloadPaths = []string{"."}
+		} else {
+			manifestPath := filepath.Join(v.sourcePath, "SystemManifest.json")
+			manifestData, err := os.ReadFile(manifestPath)
+			if err != nil {
+				updateStatus("Failed to read manifest for UE %s in %s: %v", v.ueVer, v.sourcePath, err)
+				return
+			}
+			if err := json.Unmarshal(manifestData, &localManifest); err != nil {
+				updateStatus("Failed to parse manifest for UE %s: %v", v.ueVer, err)
+				return
+			}
 		}
 
 		packName := fmt.Sprintf("%s-%s", manifestID, v.ueVer)
@@ -196,6 +205,30 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 			pathsToCopy = []string{"."}
 		}
 
+		var exclusions []string
+		if publishMode == "Plugin Update" {
+			filepath.Walk(vPluginRoot, func(p string, info os.FileInfo, err error) error {
+				if err != nil { return nil }
+				if info.IsDir() {
+					base := info.Name()
+					if base == ".git" || base == "Binaries" || base == "Intermediate" || base == "Saved" || base == "DerivedDataCache" || base == ".vs" {
+						return filepath.SkipDir
+					}
+				}
+				if !info.IsDir() && info.Name() == "SystemManifest.json" {
+					if b, err := os.ReadFile(p); err == nil {
+						var m SystemManifest
+						if json.Unmarshal(b, &m) == nil {
+							if !m.IsCoreSystem {
+								exclusions = append(exclusions, m.PayloadPaths...)
+							}
+						}
+					}
+				}
+				return nil
+			})
+		}
+
 		for _, relPath := range pathsToCopy {
 			src := filepath.Join(vPluginRoot, relPath)
 			dst := filepath.Join(packPath, relPath)
@@ -203,7 +236,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 			if info, err := os.Stat(src); err == nil {
 				if info.IsDir() {
 					os.MkdirAll(dst, 0755)
-					if err := copyDir(src, dst); err != nil {
+					if err := copyDirFiltered(src, dst, exclusions); err != nil {
 						updateStatus("Copy dir failed for UE %s (src: %s): %v", v.ueVer, src, err)
 						return
 					}
@@ -241,6 +274,40 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, versions []versionEntry, sys
 	}
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 	os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
+
+	if publishMode == "Installer Update" {
+		updateStatus("Zipping Installer Update to output directory...")
+		outZip := filepath.Join(outDir, fmt.Sprintf("%s-%s.zip", manifestID, sysVer))
+		
+		// For installer update, the payload is already in the packs directory
+		// We just zip the source directory directly!
+		var cmdZip *exec.Cmd
+		if manifestID == "GorgeousInstaller-Source" {
+			cmdZip = exec.Command("zip", "-r", outZip, ".", "-x", "build/*", "build", "*.exe", "*.syso", ".git/*", ".git", "*.log", "*.gti")
+			cmdZip.Dir = versions[0].sourcePath
+		} else {
+			buildDir := filepath.Join(versions[0].sourcePath, "build")
+			if _, err := os.Stat(buildDir); os.IsNotExist(err) {
+				updateStatus("Build directory not found! Please compile binaries first.")
+				return
+			}
+			cmdZip = exec.Command("zip", "-r", outZip, ".")
+			cmdZip.Dir = buildDir
+		}
+		
+		if err := cmdZip.Run(); err != nil {
+			updateStatus("Failed to zip Installer Update: %v", err)
+			return
+		}
+		
+		fyne.Do(func() {
+			if progress != nil {
+				progress.Hide()
+			}
+			dialog.ShowInformation("Success", "Offline Installer Update package built at:\n"+outZip, win)
+		})
+		return
+	}
 
 	updateStatus("Compiling gorgeous-installer binary via build.sh (Windows)...")
 	outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifestID))

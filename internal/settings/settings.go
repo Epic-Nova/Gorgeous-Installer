@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // AppSettings holds the persistent configuration for the Gorgeous Installer.
@@ -17,6 +17,7 @@ type AppSettings struct {
 	UprojectAssociated    bool     `json:"uprojectAssociated"`
 	PrevUprojectCommand   string   `json:"prevUprojectCommand"`
 	DevMode               bool     `json:"devMode"`
+	BinDevMode            bool     `json:"binDevMode"`
 	ForceHTTP             bool     `json:"forceHTTP"`
 }
 
@@ -50,6 +51,7 @@ func DefaultSettings() *AppSettings {
 		UprojectAssociated:  false,
 		PrevUprojectCommand: "",
 		DevMode:             false,
+		BinDevMode:          false,
 		ForceHTTP:           false,
 	}
 }
@@ -110,17 +112,20 @@ func SaveSettings(settings *AppSettings) error {
 	return nil
 }
 
-// IsInstalledNatively checks if the desktop file/registry and binary exist.
+// IsInstalledNatively checks if the current running executable is the natively installed binary.
 func IsInstalledNatively() bool {
+	execPath, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	execPath, _ = filepath.EvalSymlinks(execPath)
+	execPath = filepath.Clean(execPath)
+
 	if runtime.GOOS == "windows" {
 		localAppData := os.Getenv("LOCALAPPDATA")
 		binPath := filepath.Join(localAppData, "Programs", "GorgeousInstaller", "gorgeous-installer.exe")
-		if _, err := os.Stat(binPath); err != nil {
-			return false
-		}
-		// Check registry via reg query
-		err := exec.Command("reg", "query", `HKCU\Software\Classes\.uproject`).Run()
-		return err == nil
+		binPath = filepath.Clean(binPath)
+		return strings.EqualFold(execPath, binPath)
 	}
 
 	home, err := os.UserHomeDir()
@@ -129,10 +134,6 @@ func IsInstalledNatively() bool {
 	}
 
 	binPath := filepath.Join(home, ".local", "bin", "gorgeous-installer")
-	desktopPath := filepath.Join(home, ".local", "share", "applications", "gorgeous-installer.desktop")
-
-	_, errBin := os.Stat(binPath)
-	_, errDesktop := os.Stat(desktopPath)
-
-	return errBin == nil && errDesktop == nil
+	binPath = filepath.Clean(binPath)
+	return execPath == binPath
 }

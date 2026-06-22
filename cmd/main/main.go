@@ -85,6 +85,10 @@ func main() {
 		opts.ProjectPath = strings.TrimSpace(flag.Arg(0))
 	}
 
+	if opts.ProjectPath != "" {
+		unreal.RecreateMissingManifests(opts.ProjectPath)
+	}
+
 	hasCLIInputs := opts.ValidateSHA ||
 		opts.ProjectPath != "" ||
 		opts.PackType != "" ||

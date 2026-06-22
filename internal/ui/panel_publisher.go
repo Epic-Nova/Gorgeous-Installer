@@ -4,16 +4,16 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/go-piv/piv-go/piv"
 
@@ -175,27 +175,13 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 	installerPathEntry := widget.NewEntry()
 	installerPathEntry.SetText(".") // default to current dir
-	
-	installerSysVerEntry := widget.NewEntry()
-	installerSysVerEntry.SetPlaceHolder("System version, e.g. 1.0.0")
-
-	installerSubSelector := widget.NewRadioGroup([]string{"Source", "Binary"}, func(s string) {
-	})
-	installerSubSelector.Horizontal = true
-	installerSubSelector.SetSelected("Source")
 
 	publishBtn = newAccentButton("Sign & Publish", accentUpdate, func() {
 		var sysID, sysName, sysDesc string
 		if publishMode == "Installer Update" {
-			if installerSubSelector.Selected == "Source" {
-				sysID = "GorgeousInstaller-Source"
-				sysName = "Gorgeous Installer Source"
-				sysDesc = "Core Installer Source Code"
-			} else {
-				sysID = "GorgeousInstaller-Bin"
-				sysName = "Gorgeous Installer Binaries"
-				sysDesc = "Compiled Installer Binaries"
-			}
+			sysID = "GorgeousInstaller"
+			sysName = "Gorgeous Installer"
+			sysDesc = "Core Installer Source"
 		} else {
 			if loadedManifest == nil {
 				return
@@ -334,13 +320,9 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			os.MkdirAll(packsDir, 0755)
 
 			var payloadChecksum string
-			var actualPluginName string
-			var availVersions []config.PackVersion
-			
-			
 
-			if publishMode == "Installer Source Update" || publishMode == "Installer Binary Update" {
-				updateStatus("2. Zipping installer payload...")
+			if publishMode == "Installer Update" {
+				updateStatus("2. Zipping installer source...")
 				
 				var srcDir string
 				fyne.Do(func() {
@@ -351,18 +333,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					srcDir = "."
 				}
 				
-				var cmdZip *exec.Cmd
-				if publishMode == "Installer Update" {
-					if installerSubSelector.Selected == "Source" {
-						cmdZip = exec.Command("zip", "-r", zipPath, ".", "-x", "build/*", "*.exe", "*.syso", ".git/*", "*.log")
-						cmdZip.Dir = srcDir
-					} else {
-						buildDir := filepath.Join(srcDir, "build")
-						cmdZip = exec.Command("zip", "-r", zipPath, ".")
-						cmdZip.Dir = buildDir
-					}
-				}
-				
+				cmdZip := exec.Command("zip", "-r", zipPath, ".", "-x", "build/*", "*.exe", "*.syso", ".git/*", "*.log")
+				cmdZip.Dir = srcDir
 				if err := cmdZip.Run(); err != nil {
 					fyne.Do(func() {
 						if progress != nil {
@@ -382,7 +354,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				}
 			} else {
 				// PLUGIN OR PACK UPDATE MODE
-				
+				var availVersions []config.PackVersion
 				
 				// Determine actualPluginName from first version's sourcePath
 				firstPluginRoot := versions[0].sourcePath
@@ -398,8 +370,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					}
 					firstPluginRoot = parent
 				}
-				
-								actualPluginName = filepath.Base(firstPluginRoot)
+				actualPluginName := filepath.Base(firstPluginRoot)
 
 				for _, v := range versions {
 					packName := fmt.Sprintf("%s-%s", loadedManifest.ID, v.ueVer)
@@ -479,7 +450,6 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						SHAFile: fmt.Sprintf("packs/%s.sha256", packName),
 					})
 				}
-			}
 
 			cfg := config.Config{
 				PackName:          loadedManifest.ID,
@@ -657,19 +627,14 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			updateStatus("PIV Signature acquired successfully.")
 			fyne.Do(func() { if progBar != nil { progBar.SetValue(3) } })
 			
-			var sysVer string
-			if publishMode == "Installer Update" {
-				sysVer = installerSysVerEntry.Text
-			} else {
-				sysVer = sysVerEntry.Text
-			}
+			sysVer := sysVerEntry.Text
 			if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
 				sysVer = "v" + sysVer
 			}
 
 			// 4. Upload
 			updateStatus("4. Uploading payload and changelog to API...")
-			err = api.PublishSystem(sysID, sysVer, notes, signature, payloadChecksum, zipPath, regData)
+			err = api.PublishSystem(sysID, sysVer, notes, signature, payloadChecksum, zipPath, regData, nil, nil)
 			if err != nil {
 				fyne.Do(func() {
 					if progress != nil {
@@ -693,29 +658,99 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				appendStatus("Successfully published %s", sysName)
 				g.showAnimatedDialog("Published", "Release published successfully.", false)
 			})
+		}
 		}()
 	})
 	publishBtn.SetEnabled(false)
 
 	offlinePublishBtn = newAccentButton("Offline Publish", accentUpdate, func() {
-		var sysVer string
-		if publishMode == "Installer Update" {
-			sysVer = installerSysVerEntry.Text
-		} else {
-			sysVer = sysVerEntry.Text
-		}
+		sysVer := sysVerEntry.Text
 		if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
 			sysVer = "v" + sysVer
 		}
-		g.showOfflinePublisherDialog(win, loadedManifest, versions, sysVer, appendStatus)
+		g.showOfflinePublisherDialog(win, publishMode, loadedManifest, versions, sysVer, appendStatus)
 	})
 	offlinePublishBtn.SetEnabled(true)
 
-	installerSubRow := container.NewHBox(widget.NewLabel("Update Type:"), installerSubSelector)
+
+	pluginUeVerEntry := widget.NewEntry()
+	pluginUeVerEntry.SetPlaceHolder("e.g. 5.4 or Universal")
+
+	pluginSysVerEntry := widget.NewEntry()
+	pluginSysVerEntry.SetPlaceHolder("Plugin version, e.g. 1.0.0")
+
+	pluginPathEntry := widget.NewEntry()
+	pluginPathEntry.SetPlaceHolder("Path to Plugin Folder...")
+
+	pluginPathBrowseBtn := widget.NewButton("Browse", func() {
+		dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
+			if lu != nil {
+				pluginPathEntry.SetText(lu.Path())
+			}
+		}, win)
+	})
+
+	pluginAddBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), func() {
+		if pluginUeVerEntry.Text == "" || pluginPathEntry.Text == "" {
+			return
+		}
+
+		pluginID, friendlyName, versionName, err := ParsePluginInfo(pluginPathEntry.Text)
+		if err != nil {
+			g.showAnimatedDialog("Error", err.Error(), true)
+			return
+		}
+
+		if loadedManifest == nil {
+			loadedManifest = &SystemManifest{
+				ID:   pluginID,
+				Name: friendlyName,
+			}
+			setCanvasText(manifestIDLbl, pluginID)
+			setCanvasText(manifestNameLbl, friendlyName)
+			if pluginSysVerEntry.Text == "" {
+				pluginSysVerEntry.SetText(versionName)
+			}
+			refreshHistory(pluginID)
+			if publishBtn != nil {
+				publishBtn.SetEnabled(true)
+			}
+			if offlinePublishBtn != nil {
+				offlinePublishBtn.SetEnabled(true)
+			}
+		}
+
+		versions = append(versions, versionEntry{
+			ueVer:      pluginUeVerEntry.Text,
+			sourcePath: pluginPathEntry.Text,
+		})
+		pluginUeVerEntry.SetText("")
+		pluginPathEntry.SetText("")
+		updateList()
+	})
+
+	pluginInputRow := container.NewVBox(
+		container.NewHBox(
+			widget.NewLabel("UE Ver:"), container.NewGridWrap(fyne.NewSize(120, 35), pluginUeVerEntry),
+			widget.NewLabel("Path:"), container.NewGridWrap(fyne.NewSize(200, 35), pluginPathEntry), pluginPathBrowseBtn,
+			layout.NewSpacer(),
+			pluginAddBtn,
+		),
+	)
+
+	pluginInfoSection := newGTCard("Plugin Definition", "Map Engine versions to Plugin folders",
+		container.NewVBox(
+			container.NewHBox(newGTLabel("System ID:"), manifestIDLbl, layout.NewSpacer(), newGTLabel("Name:"), manifestNameLbl),
+			container.NewHBox(newGTLabel("Plugin Version:"), newGTLabel("v"), container.NewGridWrap(fyne.NewSize(120, 35), pluginSysVerEntry)),
+			widget.NewSeparator(),
+			entriesBox,
+			pluginInputRow,
+		),
+	)
+	pluginInfoSection.Hide()
 
 	installerSection := newGTCard("Installer Source", "Select the root directory of the Gorgeous Installer codebase",
 		container.NewVBox(
-			installerSubRow,
 			container.NewHBox(widget.NewLabel("Source Dir:"), container.NewGridWrap(fyne.NewSize(200, 35), installerPathEntry), widget.NewButton("Browse", func() {
 				dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
 					if lu != nil {
@@ -723,7 +758,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					}
 				}, win)
 			})),
-			container.NewHBox(widget.NewLabel("System Version:"), newGTLabel("v"), container.NewGridWrap(fyne.NewSize(120, 35), installerSysVerEntry)),
+			container.NewHBox(widget.NewLabel("System Version:"), newGTLabel("v"), container.NewGridWrap(fyne.NewSize(120, 35), sysVerEntry)),
 		),
 	)
 	installerSection.Hide()
@@ -738,19 +773,33 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		),
 	)
 	
-	changelogSection := newGTCard("Release Notes", "Format as a git commit message",
-		container.NewGridWrap(fyne.NewSize(400, 150), changelogEntry),
-	)
-	
 	manageSection := g.buildManageSection(win, appendStatus)
 	manageSection.Hide()
 
+	var changelogSection fyne.CanvasObject
 	modeSelector := widget.NewRadioGroup([]string{"Pack Update", "Installer Update", "Plugin Update", "Manage Packs"}, func(s string) {
 		publishMode = s
+		// Clear state on mode switch
+		versions = []versionEntry{}
+		loadedManifest = nil
+		setCanvasText(manifestIDLbl, "-")
+		setCanvasText(manifestNameLbl, "-")
+		sysVerEntry.SetText("")
+		pluginSysVerEntry.SetText("")
+		installerSysVerEntry.SetText("")
+		ueVerEntry.SetText("")
+		pluginUeVerEntry.SetText("")
+		pathEntry.SetText("")
+		pluginPathEntry.SetText("")
+		installerPathEntry.SetText("")
+		changelogEntry.SetText("")
+		updateList()
+
 		if s == "Manage Packs" {
 			infoSection.Hide()
 			installerSection.Hide()
-			changelogSection.Hide()
+			pluginInfoSection.Hide()
+			if changelogSection != nil { changelogSection.Hide() }
 			publishBtn.Hide()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Hide()
@@ -758,18 +807,35 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			manageSection.Show()
 		} else if s == "Installer Update" {
 			infoSection.Hide()
+			pluginInfoSection.Hide()
 			installerSection.Show()
-			changelogSection.Show()
+			if changelogSection != nil { changelogSection.Show() }
 			publishBtn.Show()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Show()
 			}
 			manageSection.Hide()
 			publishBtn.SetEnabled(true)
+		} else if s == "Plugin Update" {
+			infoSection.Hide()
+			installerSection.Hide()
+			pluginInfoSection.Show()
+			if changelogSection != nil { changelogSection.Show() }
+			publishBtn.Show()
+			if offlinePublishBtn != nil {
+				offlinePublishBtn.Show()
+			}
+			manageSection.Hide()
+			if loadedManifest == nil {
+				publishBtn.SetEnabled(false)
+			} else {
+				publishBtn.SetEnabled(true)
+			}
 		} else {
+			pluginInfoSection.Hide()
 			infoSection.Show()
 			installerSection.Hide()
-			changelogSection.Show()
+			if changelogSection != nil { changelogSection.Show() }
 			publishBtn.Show()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Show()
@@ -787,11 +853,16 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	
 	modeSection := newGTCard("Publish Mode", "Select the type of release", container.NewVBox(modeSelector))
 
+	changelogSection = newGTCard("Release Notes", "Format as a git commit message",
+		container.NewGridWrap(fyne.NewSize(400, 150), changelogEntry),
+	)
+
 	leftPanel := container.NewVScroll(container.NewVBox(
 		modeSection,
 		manageSection,
 		installerSection,
 		infoSection,
+		pluginInfoSection,
 		changelogSection,
 		container.NewHBox(layout.NewSpacer(), container.NewGridWrap(fyne.NewSize(150, 50), offlinePublishBtn), container.NewGridWrap(fyne.NewSize(200, 50), publishBtn)),
 	))

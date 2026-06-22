@@ -36,6 +36,7 @@ import (
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/unreal"
 	"gorgeous-installer/internal/updater"
+	"github.com/go-piv/piv-go/piv"
 )
 
 // ─── GT Brand Design Tokens ──────────────────────────────────────────────────
@@ -1056,10 +1057,7 @@ func (g *GUIApp) Run() {
 	navItems.Add(futureDivider)
 	navItems.Add(navProjMgr)
 	
-	appSettings, _ := settings.LoadSettings()
-	if appSettings.DevMode {
-		navItems.Add(navPublisher)
-	}
+	// The Publisher button is now dynamically toggled via YubiKey listener
 
 	// Make navItems and navPublisher globally accessible for settings panel if we want real-time toggle
 	// We can use a package-level variable or just require app restart. We'll use a package variable.
@@ -1163,16 +1161,25 @@ func (g *GUIApp) Run() {
 		}
 	}
 
-	appSettings, _ = settings.LoadSettings()
+	appSettings, _ := settings.LoadSettings()
 	
+	// Determine DevMode based on context
+	isDev := appSettings.DevMode
+	if appSettings.InstalledNatively {
+		isDev = appSettings.BinDevMode
+	}
+
 	// Apply ForceHTTP setting
 	if appSettings.ForceHTTP {
 		api.BaseURL = "http://api.gorgeous.simsalabim.studio/api/v1"
 		api.IsDevMode = true
 		api.IsOffline = false
+	} else if isDev {
+		api.IsDevMode = true
 	}
 
-	skipUpdateCheck := appSettings.DevMode && !appSettings.InstalledNatively
+	// The source bin should never get updates when in dev mode
+	skipUpdateCheck := isDev && !appSettings.InstalledNatively
 	if !skipUpdateCheck {
 		go func() {
 			time.Sleep(2 * time.Second) // Wait for boot anim
@@ -1202,6 +1209,76 @@ func (g *GUIApp) Run() {
 			})
 		}()
 	}
+
+	// YubiKey Listener for Publisher UI
+	go func() {
+		isPublisherVisible := false
+		var lastCardName string
+		lastCardConfigured := false
+
+		for {
+			cards, err := piv.Cards()
+			yubiConnected := err == nil && len(cards) > 0
+			
+			configured := false
+			if yubiConnected {
+				cardName := cards[0]
+				if cardName == lastCardName {
+					// Use cached result to avoid hitting the hardware repeatedly
+					// (which causes the green LED to stay solid/blink constantly)
+					configured = lastCardConfigured
+				} else {
+					// quick test: can we open and read the signature cert?
+					yk, err := piv.Open(cardName)
+					if err == nil {
+						_, err = yk.Certificate(piv.SlotSignature)
+						if err == nil {
+							configured = true
+						}
+						yk.Close()
+					}
+					lastCardName = cardName
+					lastCardConfigured = configured
+				}
+			} else {
+				lastCardName = ""
+				lastCardConfigured = false
+			}
+
+			// Must be DevMode AND have a configured YubiKey
+			currentSettings, _ := settings.LoadSettings()
+			shouldShow := configured && currentSettings.DevMode
+
+			if shouldShow && !isPublisherVisible {
+				isPublisherVisible = true
+				fyne.Do(func() {
+					found := false
+					for _, obj := range navItems.Objects {
+						if obj == navPublisher {
+							found = true
+							break
+						}
+					}
+					if !found {
+						navItems.Add(navPublisher)
+						navItems.Refresh()
+						g.showPublisherUnlockedToast()
+					}
+				})
+			} else if !shouldShow && isPublisherVisible {
+				isPublisherVisible = false
+				fyne.Do(func() {
+					navItems.Remove(navPublisher)
+					navItems.Refresh()
+					if currentVisiblePanel == panelObjs[panelPublisher] {
+						switchToPanel(panelInstaller)
+					}
+				})
+			}
+
+			time.Sleep(3 * time.Second)
+		}
+	}()
 
 	playBootSequence(win, iconRes, isPackless, mainShell)
 	startRoundedWindowStyling(win.Title(), 32)
@@ -2163,6 +2240,14 @@ func chooseClosestVersion(engineVersion string, versions []string) string {
 			return v
 		}
 	}
+	
+	// If "Universal" is an available version, use it and skip engine matching
+	for _, v := range versions {
+		if strings.EqualFold(v, "universal") {
+			return v
+		}
+	}
+
 	engineMajor, engineMinor := parseVersion(normalized)
 	var best string
 	var bestMajor, bestMinor int
@@ -2312,12 +2397,20 @@ func (g *GUIApp) inspectInstallPlan(projectPath, selectedVersion string) (*insta
 	if detectErr != nil {
 		enginePath = ""
 	}
-	pluginPath, err := unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, g.config.PluginName)
+	pluginNameForSearch := g.config.PackName
+	if pluginNameForSearch == "" {
+		pluginNameForSearch = g.config.PluginName
+	}
+	pluginPath, err := unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, pluginNameForSearch)
 	if err != nil {
-		if detectErr != nil {
-			return nil, fmt.Errorf("failed to locate plugin %q in project plugins after engine detection failure: %w", g.config.PluginName, err)
+		if g.config.PackType == "hybrid" {
+			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", "GorgeousThings", pluginNameForSearch)
+		} else {
+			if detectErr != nil {
+				return nil, fmt.Errorf("failed to locate plugin %q in project plugins after engine detection failure: %w", pluginNameForSearch, err)
+			}
+			return nil, fmt.Errorf("failed to locate plugin %q: %w", pluginNameForSearch, err)
 		}
-		return nil, fmt.Errorf("failed to locate plugin %q: %w", g.config.PluginName, err)
 	}
 	inst := installer.NewInstaller(pluginPath, g.config.PackType, selectedPack, g.config.InstallPath, projectPath, enginePath)
 	return inst.BuildInstallPlan()
@@ -2337,12 +2430,23 @@ func (g *GUIApp) performInstall(ctx context.Context, projectPath, selectedVersio
 		appendStatus("Engine path: %s", enginePath)
 	}
 
-	pluginPath, err := unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, g.config.PluginName)
+	pluginNameForSearch := g.config.PackName
+	if pluginNameForSearch == "" {
+		pluginNameForSearch = g.config.PluginName
+	}
+	pluginPath, err := unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, pluginNameForSearch)
 	if err != nil {
-		if detectErr != nil {
-			return fmt.Errorf("failed to locate plugin %q in project plugins after engine detection failure: %w", g.config.PluginName, err)
+		if g.config.PackType == "hybrid" {
+			// Fallback: This might be a brand new plugin installation.
+			// Default to placing it in Plugins/GorgeousThings/<PackName>
+			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", "GorgeousThings", pluginNameForSearch)
+			appendStatus("Plugin %q not found locally. Preparing to install into: %s", pluginNameForSearch, pluginPath)
+		} else {
+			if detectErr != nil {
+				return fmt.Errorf("failed to locate plugin %q in project plugins after engine detection failure: %w", pluginNameForSearch, err)
+			}
+			return fmt.Errorf("failed to locate plugin %q: %w", pluginNameForSearch, err)
 		}
-		return fmt.Errorf("failed to locate plugin %q: %w", g.config.PluginName, err)
 	}
 	appendStatus("Plugin path: %s", pluginPath)
 
@@ -2559,6 +2663,59 @@ func (g *GUIApp) showDevModeToast() {
 			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
 				g.toastLayout.offsetY = 150 * v // slide back down
+				g.toastLayer.Refresh()
+			})
+			animOut.Curve = fyne.AnimationEaseIn
+			animOut.Start()
+			
+			time.AfterFunc(450*time.Millisecond, func() {
+				fyne.Do(func() {
+					g.toastLayer.Remove(toastCard)
+					g.toastLayer.Refresh()
+				})
+			})
+		})
+	})
+}
+
+func (g *GUIApp) showPublisherUnlockedToast() {
+	g.toastLayer.Objects = nil
+	g.toastLayer.Refresh()
+
+	iconTxt := canvas.NewText("🔑", accentSuccess)
+	iconTxt.TextSize = 22
+	iconBox := container.NewCenter(iconTxt)
+
+	title := canvas.NewText("Publisher UI Unlocked", accentSuccess)
+	title.TextStyle = fyne.TextStyle{Bold: true}
+	title.TextSize = 14
+	
+	msg := canvas.NewText("YubiKey connected and configured.", gtTextSecondary)
+	msg.TextSize = 12
+	
+	textCol := container.NewVBox(title, msg)
+	
+	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
+	
+	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
+	g.toastLayer.Add(toastCard)
+	g.toastLayer.Refresh()
+	
+	// Animate in by sliding up
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+		v := p.X
+		g.toastLayout.offsetY = 150 * (1 - v)
+		g.toastLayer.Refresh()
+	})
+	animIn.Curve = fyne.AnimationEaseOut
+	animIn.Start()
+	
+	// Animate away
+	time.AfterFunc(8 * time.Second, func() {
+		fyne.Do(func() {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+				v := p.X
+				g.toastLayout.offsetY = 150 * v
 				g.toastLayer.Refresh()
 			})
 			animOut.Curve = fyne.AnimationEaseIn

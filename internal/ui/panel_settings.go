@@ -100,20 +100,25 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 	)
 
 	// Developer Section
+	// Determine context
+	isDev := appSettings.DevMode
+	if appSettings.InstalledNatively {
+		isDev = appSettings.BinDevMode
+	}
+
 	forceHttpCheck := widget.NewCheck("Force HTTP (Local Testing)", func(b bool) {
 		appSettings.ForceHTTP = b
 	})
 	forceHttpCheck.SetChecked(appSettings.ForceHTTP)
-	if !appSettings.DevMode {
+	if !isDev {
 		forceHttpCheck.Hide()
 	}
 
-	devModeCheck := widget.NewCheck("Enable Developer Mode", func(b bool) {
-		appSettings.DevMode = b
-		if b {
+	updateDevUI := func() {
+		anyDev := appSettings.DevMode || appSettings.BinDevMode
+		if anyDev {
 			forceHttpCheck.Show()
 			if g.navItemsBox != nil && g.navPublisherBtn != nil {
-				// Check if it's already there
 				found := false
 				for _, obj := range g.navItemsBox.Objects {
 					if obj == g.navPublisherBtn {
@@ -133,8 +138,19 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 				g.navItemsBox.Remove(g.navPublisherBtn)
 			}
 		}
+	}
+
+	devModeCheck := widget.NewCheck("Enable Developer Mode (Plugin Source)", func(b bool) {
+		appSettings.DevMode = b
+		updateDevUI()
 	})
 	devModeCheck.SetChecked(appSettings.DevMode)
+
+	binDevModeCheck := widget.NewCheck("Enable Developer Mode (Standalone Installer)", func(b bool) {
+		appSettings.BinDevMode = b
+		updateDevUI()
+	})
+	binDevModeCheck.SetChecked(appSettings.BinDevMode)
 
 	devHelpBtn := widget.NewButtonWithIcon("", theme.QuestionIcon(), func() {
 		g.showAnimatedDialog("Developer Mode", "Enabling Developer Mode allows testing HTTP connections and reveals the Publisher Menu.\n\nWhen enabled on a local codebase, Installer Source Updates are disabled to prevent overwriting your local edits.", false)
@@ -142,6 +158,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 
 	devVBox := container.NewVBox(
 		container.NewHBox(devModeCheck, devHelpBtn),
+		binDevModeCheck,
 		forceHttpCheck,
 	)
 
@@ -151,7 +168,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 
 	// Update Section
 	var updateSection fyne.CanvasObject
-	skipUpdateCheck := appSettings.DevMode && !appSettings.InstalledNatively
+	skipUpdateCheck := isDev && !appSettings.InstalledNatively
 	if !skipUpdateCheck {
 		newVer, ok := updater.CheckForUpdates(buildinfo.Version, appSettings.InstalledNatively)
 		if ok {

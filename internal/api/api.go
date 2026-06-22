@@ -132,7 +132,10 @@ type PublishRequest struct {
 	TargetPluginName string `json:"target_plugin_name,omitempty"`
 	DisplayName      string `json:"display_name,omitempty"`
 	Description      string `json:"description,omitempty"`
-	IsCoreSystem     bool   `json:"is_core_system,omitempty"`
+	IsCoreSystem     bool   `json:"is_core_system"`
+	MinimumCoreVersion string `json:"minimum_core_version,omitempty"`
+	SourcePaths      []string `json:"source_paths,omitempty"`
+	ContentPaths     []string `json:"content_paths,omitempty"`
 }
 
 type PublishResponse struct {
@@ -189,15 +192,20 @@ type SystemRegistrationData struct {
 	DisplayName      string
 	Description      string
 	IsCoreSystem     bool
+	MinimumCoreVersion string
+	SourcePaths      []string
+	ContentPaths     []string
 }
 
-func PublishSystem(systemId, version, changelog, signature, checksum, payloadPath string, regData *SystemRegistrationData) error {
+func PublishSystem(systemId, version, changelog, signature, checksum, payloadPath string, regData *SystemRegistrationData, sourcePaths []string, contentPaths []string) error {
 	// 1. Post metadata to get Upload URL
 	reqBody := PublishRequest{
 		Version:   version,
 		Changelog: changelog,
 		Signature: signature,
 		Checksum:  checksum,
+		SourcePaths: sourcePaths,
+		ContentPaths: contentPaths,
 	}
 	
 	if regData != nil {
@@ -205,6 +213,7 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 		reqBody.DisplayName = regData.DisplayName
 		reqBody.Description = regData.Description
 		reqBody.IsCoreSystem = regData.IsCoreSystem
+		reqBody.MinimumCoreVersion = regData.MinimumCoreVersion
 	}
 	jsonData, _ := json.Marshal(reqBody)
 
@@ -248,8 +257,7 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 	putReq.ContentLength = fileStat.Size()
 	putReq.Header.Set("Content-Type", "application/zip")
 
-	s3Client := &http.Client{Timeout: 5 * time.Minute}
-	s3Resp, err := s3Client.Do(putReq)
+	s3Resp, err := http.DefaultClient.Do(putReq)
 	if err != nil {
 		return err
 	}
@@ -263,16 +271,41 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 	return nil
 }
 
+func PromoteSystemVersion(systemId, version string) error {
+	req, err := http.NewRequest("PATCH", fmt.Sprintf("%s/systems/%s/versions/%s/promote", BaseURL, systemId, version), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("promote failed: %d - %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+type SystemVersionItem struct {
+	Version        string `json:"Version"`
+	IsMasterUpdate bool   `json:"IsMasterUpdate"`
+}
+
 type SystemItem struct {
-	SystemId         string   `json:"SystemId"`
-	TargetPluginName string   `json:"TargetPluginName"`
-	DisplayName      string   `json:"DisplayName"`
-	Description      string   `json:"Description"`
-	Version          string   `json:"Version"`
-	DownloadUrl      string   `json:"DownloadUrl"`
-	SourcePaths      []string `json:"SourcePaths"`
-	ContentPaths     []string `json:"ContentPaths"`
-	IsCoreSystem     bool     `json:"bIsCoreSystem"`
+	SystemId         string              `json:"SystemId"`
+	TargetPluginName string              `json:"TargetPluginName"`
+	DisplayName      string              `json:"DisplayName"`
+	Description      string              `json:"Description"`
+	Version          string              `json:"Version"`
+	ChangelogUrl     string              `json:"ChangelogUrl"`
+	DownloadUrl      string              `json:"DownloadUrl"`
+	SourcePaths      []string            `json:"SourcePaths"`
+	ContentPaths     []string            `json:"ContentPaths"`
+	Versions         []SystemVersionItem `json:"Versions"`
+	IsCoreSystem     bool                `json:"bIsCoreSystem"`
 }
 
 type SystemsResponse struct {
@@ -309,13 +342,11 @@ func PatchSystem(systemId string, signature string, regData SystemRegistrationDa
 		TargetPluginName string `json:"target_plugin_name"`
 		DisplayName      string `json:"display_name"`
 		Description      string `json:"description"`
-		IsCoreSystem     bool   `json:"is_core_system"`
 	}{
 		Signature:        signature,
 		TargetPluginName: regData.TargetPluginName,
 		DisplayName:      regData.DisplayName,
 		Description:      regData.Description,
-		IsCoreSystem:     regData.IsCoreSystem,
 	}
 
 	jsonData, _ := json.Marshal(reqBody)
@@ -360,5 +391,31 @@ func DeleteSystem(systemId string, signature string) error {
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("failed to delete system, status code %d", resp.StatusCode)
 	}
+	return nil
+}
+
+func DeleteSystemVersion(systemId string, version string, signature string) error {
+	reqBody := struct {
+		Signature string `json:"signature"`
+	}{Signature: signature}
+
+	jsonData, _ := json.Marshal(reqBody)
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/systems/%s/versions/%s", BaseURL, systemId, version), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete version failed: %d - %s", resp.StatusCode, string(body))
+	}
+
 	return nil
 }

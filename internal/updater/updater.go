@@ -24,10 +24,29 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 	if err != nil {
 		return "", false
 	}
-	if resp.UpdateAvailable && resp.LatestVersion != currentVersion {
-		return resp.LatestVersion, true
+	if resp.UpdateAvailable {
+		// Compare versions as integers (e.g., 1.0.0 -> 100)
+		latestInt := ParseVersion(resp.LatestVersion)
+		currentInt := ParseVersion(currentVersion)
+		
+		if latestInt > currentInt {
+			return resp.LatestVersion, true
+		} else if latestInt == 0 && currentInt == 0 && resp.LatestVersion != currentVersion {
+			// Fallback: If we couldn't parse either, but they differ
+			return resp.LatestVersion, true
+		}
 	}
 	return "", false
+}
+
+// ParseVersion strips dots and non-numeric characters to form an integer version
+// e.g. "1.0.0" -> 100, "v1.2.3" -> 123
+func ParseVersion(v string) int {
+	v = strings.TrimPrefix(v, "v")
+	clean := strings.ReplaceAll(v, ".", "")
+	var result int
+	fmt.Sscanf(clean, "%d", &result)
+	return result
 }
 
 // PerformUpdate downloads the new payload ZIP and applies it based on installation type.
