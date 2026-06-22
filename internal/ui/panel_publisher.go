@@ -98,12 +98,72 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		}
 		entriesBox.Refresh()
 	}
-
+	
 	ueVerEntry := widget.NewEntry()
 	ueVerEntry.SetPlaceHolder("e.g. 5.4")
 
 	sysVerEntry := widget.NewEntry()
-	sysVerEntry.SetPlaceHolder("System version, e.g. 1.0.0")
+	sysVerEntry.SetPlaceHolder("Semantic version, e.g. 1.0.0")
+
+	pluginUeVerEntry := widget.NewEntry()
+	pluginUeVerEntry.SetPlaceHolder("e.g. 5.4 or Universal")
+
+	pluginSysVerEntry := widget.NewEntry()
+	pluginSysVerEntry.SetPlaceHolder("Plugin version, e.g. 1.0.0")
+
+	pluginPathEntry := widget.NewEntry()
+	pluginPathEntry.SetPlaceHolder("Path to Plugin Folder...")
+
+
+
+	pluginPathBrowseBtn := widget.NewButton("Browse", func() {
+		dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
+			if lu != nil {
+				pluginPathEntry.SetText(lu.Path())
+			}
+		}, win)
+	})
+
+	pluginAddBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), func() {
+		if pluginUeVerEntry.Text == "" || pluginPathEntry.Text == "" {
+			return
+		}
+
+		pluginID, friendlyName, versionName, err := ParsePluginInfo(pluginPathEntry.Text)
+		if err != nil {
+			g.showAnimatedDialog("Error", err.Error(), true)
+			return
+		}
+
+		if loadedManifest == nil {
+			loadedManifest = &SystemManifest{
+				ID:   pluginID,
+				Name: friendlyName,
+			}
+			setCanvasText(manifestIDLbl, pluginID)
+			setCanvasText(manifestNameLbl, friendlyName)
+			if pluginSysVerEntry.Text == "" {
+				pluginSysVerEntry.SetText(versionName)
+			}
+			refreshHistory(pluginID)
+			if publishBtn != nil {
+				publishBtn.SetEnabled(true)
+			}
+			if offlinePublishBtn != nil {
+				offlinePublishBtn.SetEnabled(true)
+			}
+		}
+
+		versions = append(versions, versionEntry{
+			ueVer:      pluginUeVerEntry.Text,
+			sourcePath: pluginPathEntry.Text,
+		})
+		pluginUeVerEntry.SetText("")
+		pluginPathEntry.SetText("")
+		if updateList != nil {
+			updateList()
+		}
+	})
 
 	pathEntry := widget.NewEntry()
 	pathEntry.SetPlaceHolder("Path to System Folder...")
@@ -474,8 +534,9 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				return
 			}
 			fyne.Do(func() { if progBar != nil { progBar.SetValue(2) } })
+		}
 			
-			// Prompt for PIN in Fyne GUI
+		// Prompt for PIN in Fyne GUI
 			pinChan := make(chan string)
 			fyne.Do(func() {
 				entry := widget.NewPasswordEntry()
@@ -658,7 +719,6 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				appendStatus("Successfully published %s", sysName)
 				g.showAnimatedDialog("Published", "Release published successfully.", false)
 			})
-		}
 		}()
 	})
 	publishBtn.SetEnabled(false)
@@ -671,83 +731,6 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		g.showOfflinePublisherDialog(win, publishMode, loadedManifest, versions, sysVer, appendStatus)
 	})
 	offlinePublishBtn.SetEnabled(true)
-
-
-	pluginUeVerEntry := widget.NewEntry()
-	pluginUeVerEntry.SetPlaceHolder("e.g. 5.4 or Universal")
-
-	pluginSysVerEntry := widget.NewEntry()
-	pluginSysVerEntry.SetPlaceHolder("Plugin version, e.g. 1.0.0")
-
-	pluginPathEntry := widget.NewEntry()
-	pluginPathEntry.SetPlaceHolder("Path to Plugin Folder...")
-
-	pluginPathBrowseBtn := widget.NewButton("Browse", func() {
-		dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
-			if lu != nil {
-				pluginPathEntry.SetText(lu.Path())
-			}
-		}, win)
-	})
-
-	pluginAddBtn := widget.NewButtonWithIcon("Add", theme.ContentAddIcon(), func() {
-		if pluginUeVerEntry.Text == "" || pluginPathEntry.Text == "" {
-			return
-		}
-
-		pluginID, friendlyName, versionName, err := ParsePluginInfo(pluginPathEntry.Text)
-		if err != nil {
-			g.showAnimatedDialog("Error", err.Error(), true)
-			return
-		}
-
-		if loadedManifest == nil {
-			loadedManifest = &SystemManifest{
-				ID:   pluginID,
-				Name: friendlyName,
-			}
-			setCanvasText(manifestIDLbl, pluginID)
-			setCanvasText(manifestNameLbl, friendlyName)
-			if pluginSysVerEntry.Text == "" {
-				pluginSysVerEntry.SetText(versionName)
-			}
-			refreshHistory(pluginID)
-			if publishBtn != nil {
-				publishBtn.SetEnabled(true)
-			}
-			if offlinePublishBtn != nil {
-				offlinePublishBtn.SetEnabled(true)
-			}
-		}
-
-		versions = append(versions, versionEntry{
-			ueVer:      pluginUeVerEntry.Text,
-			sourcePath: pluginPathEntry.Text,
-		})
-		pluginUeVerEntry.SetText("")
-		pluginPathEntry.SetText("")
-		updateList()
-	})
-
-	pluginInputRow := container.NewVBox(
-		container.NewHBox(
-			widget.NewLabel("UE Ver:"), container.NewGridWrap(fyne.NewSize(120, 35), pluginUeVerEntry),
-			widget.NewLabel("Path:"), container.NewGridWrap(fyne.NewSize(200, 35), pluginPathEntry), pluginPathBrowseBtn,
-			layout.NewSpacer(),
-			pluginAddBtn,
-		),
-	)
-
-	pluginInfoSection := newGTCard("Plugin Definition", "Map Engine versions to Plugin folders",
-		container.NewVBox(
-			container.NewHBox(newGTLabel("System ID:"), manifestIDLbl, layout.NewSpacer(), newGTLabel("Name:"), manifestNameLbl),
-			container.NewHBox(newGTLabel("Plugin Version:"), newGTLabel("v"), container.NewGridWrap(fyne.NewSize(120, 35), pluginSysVerEntry)),
-			widget.NewSeparator(),
-			entriesBox,
-			pluginInputRow,
-		),
-	)
-	pluginInfoSection.Hide()
 
 	installerSection := newGTCard("Installer Source", "Select the root directory of the Gorgeous Installer codebase",
 		container.NewVBox(
@@ -776,30 +759,15 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	manageSection := g.buildManageSection(win, appendStatus)
 	manageSection.Hide()
 
-	var changelogSection fyne.CanvasObject
+	var changelogSection, pluginInfoSection fyne.CanvasObject
+
 	modeSelector := widget.NewRadioGroup([]string{"Pack Update", "Installer Update", "Plugin Update", "Manage Packs"}, func(s string) {
 		publishMode = s
-		// Clear state on mode switch
-		versions = []versionEntry{}
-		loadedManifest = nil
-		setCanvasText(manifestIDLbl, "-")
-		setCanvasText(manifestNameLbl, "-")
-		sysVerEntry.SetText("")
-		pluginSysVerEntry.SetText("")
-		installerSysVerEntry.SetText("")
-		ueVerEntry.SetText("")
-		pluginUeVerEntry.SetText("")
-		pathEntry.SetText("")
-		pluginPathEntry.SetText("")
-		installerPathEntry.SetText("")
-		changelogEntry.SetText("")
-		updateList()
-
 		if s == "Manage Packs" {
 			infoSection.Hide()
-			installerSection.Hide()
 			pluginInfoSection.Hide()
-			if changelogSection != nil { changelogSection.Hide() }
+			installerSection.Hide()
+			changelogSection.Hide()
 			publishBtn.Hide()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Hide()
@@ -809,7 +777,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			infoSection.Hide()
 			pluginInfoSection.Hide()
 			installerSection.Show()
-			if changelogSection != nil { changelogSection.Show() }
+			changelogSection.Show()
 			publishBtn.Show()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Show()
@@ -820,7 +788,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			infoSection.Hide()
 			installerSection.Hide()
 			pluginInfoSection.Show()
-			if changelogSection != nil { changelogSection.Show() }
+			changelogSection.Show()
 			publishBtn.Show()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Show()
@@ -832,10 +800,10 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				publishBtn.SetEnabled(true)
 			}
 		} else {
-			pluginInfoSection.Hide()
 			infoSection.Show()
+			pluginInfoSection.Hide()
 			installerSection.Hide()
-			if changelogSection != nil { changelogSection.Show() }
+			changelogSection.Show()
 			publishBtn.Show()
 			if offlinePublishBtn != nil {
 				offlinePublishBtn.Show()
@@ -856,6 +824,26 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	changelogSection = newGTCard("Release Notes", "Format as a git commit message",
 		container.NewGridWrap(fyne.NewSize(400, 150), changelogEntry),
 	)
+
+	pluginInputRow := container.NewVBox(
+		container.NewHBox(
+			widget.NewLabel("UE Ver:"), container.NewGridWrap(fyne.NewSize(70, 35), pluginUeVerEntry),
+			widget.NewLabel("Path:"), container.NewGridWrap(fyne.NewSize(200, 35), pluginPathEntry), pluginPathBrowseBtn,
+			layout.NewSpacer(),
+			pluginAddBtn,
+		),
+	)
+
+	pluginInfoSection = newGTCard("Plugin Definition", "Map Engine versions to Plugin folders",
+		container.NewVBox(
+			container.NewHBox(newGTLabel("System ID:"), manifestIDLbl, layout.NewSpacer(), newGTLabel("Name:"), manifestNameLbl),
+			container.NewHBox(newGTLabel("Plugin Version:"), newGTLabel("v"), container.NewGridWrap(fyne.NewSize(120, 35), pluginSysVerEntry)),
+			widget.NewSeparator(),
+			entriesBox,
+			pluginInputRow,
+		),
+	)
+	pluginInfoSection.Hide()
 
 	leftPanel := container.NewVScroll(container.NewVBox(
 		modeSection,
