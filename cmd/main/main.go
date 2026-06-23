@@ -289,7 +289,7 @@ func runCLIInstall(cfg *config.Config, opts cliOptions) {
 
 func runGUIMode(cfg *config.Config, opts cliOptions) {
 	fmt.Println("Starting installer in GUI mode...")
-	app := ui.NewGUIApp(cfg, opts.RecompileOnly, opts.WaitForPID, opts.ReopenProject, opts.AutoBuildProject, opts.VerifyCompatibility)
+	app := ui.NewGUIApp(cfg, opts.RecompileOnly, opts.WaitForPID, opts.ReopenProject, opts.AutoBuildProject, opts.VerifyCompatibility, strings.TrimSpace(*installZip))
 	app.ProjectPath = opts.ProjectPath
 	app.Run()
 }

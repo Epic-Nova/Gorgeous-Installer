@@ -1163,6 +1163,10 @@ func (g *GUIApp) Run() {
 			time.AfterFunc(800*time.Millisecond, func() {
 				fyne.Do(func() { actionBtn.Trigger() })
 			})
+		} else if g.installZipPath != "" && g.waitForPID == 0 {
+			time.AfterFunc(800*time.Millisecond, func() {
+				fyne.Do(func() { actionBtn.Trigger() })
+			})
 		}
 	}
 
