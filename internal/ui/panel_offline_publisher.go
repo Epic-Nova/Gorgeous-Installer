@@ -330,36 +330,33 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 
 	// Installer Update bypass is handled at the beginning of the function
 
-	updateStatus("Compiling gorgeous-installer binary via build.sh (Windows)...")
-	outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifestID))
-	
-	cmdBuild := exec.Command("bash", "./build.sh")
+	updateStatus("Compiling gorgeous-installer binaries via build.sh (Linux + Windows)...")
+	cmdBuild := exec.Command("bash", "./build.sh", "--cross-windows")
 	cmdBuild.Dir = tempDir
-	cmdBuild.Env = append(os.Environ(), "GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=1", "CC=x86_64-w64-mingw32-gcc", "CXX=x86_64-w64-mingw32-g++")
 	if out, err := cmdBuild.CombinedOutput(); err != nil {
-		updateStatus("Windows build skipped or failed: %v\n%s\n(Note: Cross-compiling Fyne to Windows on Linux requires 'gcc-mingw-w64' installed)", err, string(out))
+		updateStatus("Build failed: %v\n%s", err, string(out))
 	} else {
-		srcExe := filepath.Join(tempDir, "build", "gorgeous-installer.exe")
-		if err := copyFile(srcExe, outExe); err != nil {
-			updateStatus("Failed to copy Windows binary: %v", err)
-		} else {
-			updateStatus("Windows build successful!")
-		}
-	}
-
-	updateStatus("Compiling gorgeous-installer binary via build.sh (Linux)...")
-	outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifestID))
-	cmdBuildLin := exec.Command("bash", "./build.sh")
-	cmdBuildLin.Dir = tempDir
-	if out, err := cmdBuildLin.CombinedOutput(); err != nil {
-		updateStatus("Linux build failed: %v\n%s", err, string(out))
-	} else {
+		// Copy Linux binary
+		outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifestID))
 		srcBin := filepath.Join(tempDir, "build", "gorgeous-installer")
 		if err := copyFile(srcBin, outBin); err != nil {
 			updateStatus("Failed to copy Linux binary: %v", err)
 		} else {
 			os.Chmod(outBin, 0755)
 			updateStatus("Linux build successful!")
+		}
+
+		// Copy Windows binary (if cross-compilation succeeded)
+		outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifestID))
+		srcExe := filepath.Join(tempDir, "build", "gorgeous-installer.exe")
+		if _, err := os.Stat(srcExe); err == nil {
+			if err := copyFile(srcExe, outExe); err != nil {
+				updateStatus("Failed to copy Windows binary: %v", err)
+			} else {
+				updateStatus("Windows build successful!")
+			}
+		} else {
+			updateStatus("Windows build skipped (Note: Cross-compiling to Windows on Linux requires 'gcc-mingw-w64' installed)")
 		}
 	}
 

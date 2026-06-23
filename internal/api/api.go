@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -60,8 +61,12 @@ type InstallerUpdateResponse struct {
 	ChecksumSha256  string `json:"ChecksumSha256"`
 }
 
-func CheckInstallerUpdate(updateType string) (*InstallerUpdateResponse, error) {
-	resp, err := httpClient.Get(BaseURL + "/installer/update-check?type=" + updateType)
+func CheckInstallerUpdate(updateType string, currentVersion string) (*InstallerUpdateResponse, error) {
+	url := BaseURL + "/installer/update-check?type=" + updateType
+	if currentVersion != "" {
+		url += "&current_version=" + currentVersion
+	}
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +137,7 @@ type PublishRequest struct {
 	TargetPluginName string `json:"target_plugin_name,omitempty"`
 	DisplayName      string `json:"display_name,omitempty"`
 	Description      string `json:"description,omitempty"`
-	IsCoreSystem     bool   `json:"is_core_system"`
+	IsCoreSystem     *bool   `json:"is_core_system,omitempty"`
 	MinimumCoreVersion string `json:"minimum_core_version,omitempty"`
 	SourcePaths      []string `json:"source_paths,omitempty"`
 	ContentPaths     []string `json:"content_paths,omitempty"`
@@ -215,7 +220,7 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 		reqBody.TargetPluginName = regData.TargetPluginName
 		reqBody.DisplayName = regData.DisplayName
 		reqBody.Description = regData.Description
-		reqBody.IsCoreSystem = regData.IsCoreSystem
+		reqBody.IsCoreSystem = &regData.IsCoreSystem
 		if regData.MinimumCoreVersion != "" {
 			reqBody.MinimumCoreVersion = regData.MinimumCoreVersion
 		}
@@ -300,17 +305,33 @@ type SystemVersionItem struct {
 }
 
 type SystemItem struct {
-	SystemId         string              `json:"SystemId"`
-	TargetPluginName string              `json:"TargetPluginName"`
-	DisplayName      string              `json:"DisplayName"`
-	Description      string              `json:"Description"`
-	Version          string              `json:"Version"`
-	ChangelogUrl     string              `json:"ChangelogUrl"`
-	DownloadUrl      string              `json:"DownloadUrl"`
-	SourcePaths      []string            `json:"SourcePaths"`
-	ContentPaths     []string            `json:"ContentPaths"`
-	Versions         []SystemVersionItem `json:"Versions"`
-	IsCoreSystem     bool                `json:"bIsCoreSystem"`
+	SystemId           string              `json:"SystemId"`
+	TargetPluginName   string              `json:"TargetPluginName"`
+	DisplayName        string              `json:"DisplayName"`
+	Description        string              `json:"Description"`
+	Version            string              `json:"Version"`
+	ChangelogUrl       string              `json:"ChangelogUrl"`
+	DownloadUrl        string              `json:"DownloadUrl"`
+	SourcePaths        []string            `json:"SourcePaths"`
+	ContentPaths       []string            `json:"ContentPaths"`
+	Versions           []SystemVersionItem `json:"Versions"`
+	IsCoreSystem       bool                `json:"bIsCoreSystem"`
+	MinimumCoreVersion string              `json:"MinimumCoreVersion"`
+}
+
+func (s *SystemItem) IsPackUpdate() bool {
+	return len(s.SourcePaths) > 0 && len(s.ContentPaths) > 0
+}
+
+func (s *SystemItem) IsInstallerUpdate() bool {
+	return strings.HasPrefix(s.SystemId, "GorgeousInstaller")
+}
+
+func (s *SystemItem) IsPluginUpdate() bool {
+	if strings.HasPrefix(s.SystemId, "GorgeousInstaller") {
+		return false
+	}
+	return len(s.SourcePaths) == 0 && len(s.ContentPaths) == 0
 }
 
 type SystemsResponse struct {
@@ -341,18 +362,52 @@ func GetSystems() ([]SystemItem, error) {
 	return sysResp.OfflineSystemCache, nil
 }
 
+func GetAllSystems() ([]SystemItem, error) {
+	req, err := http.NewRequest("GET", BaseURL+"/systems/all", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("API error: status code %d", resp.StatusCode)
+	}
+
+	var sysResp SystemsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sysResp); err != nil {
+		return nil, err
+	}
+
+	return sysResp.OfflineSystemCache, nil
+}
+
 func PatchSystem(systemId string, signature string, regData SystemRegistrationData) error {
 	reqBody := struct {
-		Signature        string `json:"signature"`
-		TargetPluginName string `json:"target_plugin_name"`
-		DisplayName      string `json:"display_name"`
-		Description      string `json:"description"`
+		Signature           string   `json:"signature"`
+		TargetPluginName    string   `json:"target_plugin_name"`
+		DisplayName         string   `json:"display_name"`
+		Description         string   `json:"description"`
+		MinimumCoreVersion  string   `json:"minimum_core_version"`
+		SourcePaths         []string `json:"source_paths"`
+		ContentPaths        []string `json:"content_paths"`
+		IsCoreSystem        *bool    `json:"is_core_system,omitempty"`
 	}{
-		Signature:        signature,
-		TargetPluginName: regData.TargetPluginName,
-		DisplayName:      regData.DisplayName,
-		Description:      regData.Description,
+		Signature:           signature,
+		TargetPluginName:    regData.TargetPluginName,
+		DisplayName:         regData.DisplayName,
+		Description:         regData.Description,
+		MinimumCoreVersion:  regData.MinimumCoreVersion,
+		SourcePaths:         regData.SourcePaths,
+		ContentPaths:        regData.ContentPaths,
 	}
+
+	isCore := regData.IsCoreSystem
+	reqBody.IsCoreSystem = &isCore
 
 	jsonData, _ := json.Marshal(reqBody)
 	req, err := http.NewRequest("PATCH", BaseURL+"/systems/"+systemId, bytes.NewBuffer(jsonData))

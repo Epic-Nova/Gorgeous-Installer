@@ -107,13 +107,12 @@ func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 }
 
 func checkProcessAlive(pid int) error {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return err
+	for {
+		if !isProcessRunning(pid) {
+			return nil
+		}
+		time.Sleep(1 * time.Second)
 	}
-	_ = p
-	time.Sleep(3 * time.Second)
-	return fmt.Errorf("process assumed closed") // Hack for cross-platform exit
 }
 
 func extractZip(src, dest string) error {

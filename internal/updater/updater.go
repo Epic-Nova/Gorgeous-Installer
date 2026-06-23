@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"gorgeous-installer/internal/api"
+	"gorgeous-installer/internal/settings"
 )
 
 // CheckForUpdates fetches the latest installer version from the API.
@@ -20,22 +21,60 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 	if installedNatively {
 		updateType = "bin"
 	}
-	resp, err := api.CheckInstallerUpdate(updateType)
+	resp, err := api.CheckInstallerUpdate(updateType, currentVersion)
 	if err != nil {
 		return "", false
 	}
-	if resp.UpdateAvailable {
-		// Compare versions as integers (e.g., 1.0.0 -> 100)
-		latestInt := ParseVersion(resp.LatestVersion)
-		currentInt := ParseVersion(currentVersion)
-		
-		if latestInt > currentInt {
-			return resp.LatestVersion, true
-		} else if latestInt == 0 && currentInt == 0 && resp.LatestVersion != currentVersion {
-			// Fallback: If we couldn't parse either, but they differ
+	if !resp.UpdateAvailable {
+		return "", false
+	}
+
+	// Normalise both version strings the same way before any comparison.
+	cleanCurrent := strings.TrimPrefix(currentVersion, "v")
+	cleanLatest := strings.TrimPrefix(resp.LatestVersion, "v")
+
+	// If we're already on the latest version, no update needed.
+	// This is the primary guard — catches exact matches including non-semver
+	// names like "Dev" that both sides share after stripping the v prefix.
+	if cleanCurrent == cleanLatest {
+		return "", false
+	}
+
+	systemId := "GorgeousInstaller-Source"
+	if installedNatively {
+		systemId = "GorgeousInstaller-Bin"
+	}
+
+	// Check if the current version is even registered in the API.
+	// If not, treat the installed version as older than the master update
+	// so the user always has a known-good entry point to follow the chain.
+	systems, err := api.GetSystems()
+	if err == nil {
+		for _, sys := range systems {
+			if sys.SystemId != systemId {
+				continue
+			}
+			for _, v := range sys.Versions {
+				// Strip v prefix from stored version too before comparing.
+				if strings.TrimPrefix(v.Version, "v") == cleanCurrent {
+					// Version is registered — fall through to numeric comparison.
+					goto doNumericCompare
+				}
+			}
+			// System found but current version not in its list — treat as outdated.
 			return resp.LatestVersion, true
 		}
 	}
+
+doNumericCompare:
+	latestInt := ParseVersion(resp.LatestVersion)
+	currentInt := ParseVersion(currentVersion)
+
+	if latestInt > currentInt {
+		return resp.LatestVersion, true
+	}
+	// Both versions are non-numeric (e.g. both "Dev") but differ — already
+	// handled by the exact-match guard above, so no extra fallback needed.
 	return "", false
 }
 
@@ -56,7 +95,7 @@ func PerformUpdate(binPath string, installedNatively bool) error {
 		updateType = "bin"
 	}
 
-	resp, err := api.CheckInstallerUpdate(updateType)
+	resp, err := api.CheckInstallerUpdate(updateType, "")
 	if err != nil || !resp.UpdateAvailable {
 		return fmt.Errorf("could not retrieve update info: %v", err)
 	}
@@ -126,21 +165,48 @@ func applyBinaryUpdate(zipPath string, binPath string) error {
 	}
 	os.Chmod(extractedExe, 0755)
 
+	// Get the error log path from settings
+	errFilePath, _ := settings.ErrorFilePath()
+	if errFilePath == "" {
+		errFilePath = filepath.Join(os.TempDir(), "gorgeous-update-error.txt")
+	}
+
+	// Get the currently-running executable so the script can relaunch it (or the new one)
+	currentExe, err := os.Executable()
+	if err != nil {
+		currentExe = binPath
+	}
+
 	// Create update script to swap running binary
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	
+
 	var scriptPath string
 	if runtime.GOOS == "windows" {
 		scriptPath = filepath.Join(home, "gorgeous-update.bat")
 		scriptContent := fmt.Sprintf(`@echo off
 timeout /t 2 /nobreak >nul
-copy /y "%s" "%s"
-del "%s"
+2>"%s" copy /y "%s" "%s"
+if %%errorlevel%% == 0 (
+    del /f "%s" 2>nul
+    start "" "%s"
+) else (
+    start "" "%s"
+)
+del "%s" 2>nul
+rmdir /s /q "%s" 2>nul
 del "%%~f0"
-`, extractedExe, binPath, zipPath)
+`,
+			errFilePath,
+			extractedExe, binPath,
+			errFilePath,
+			binPath,
+			currentExe,
+			zipPath,
+			tempExtractDir,
+		)
 		if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 			return err
 		}
@@ -150,16 +216,37 @@ del "%%~f0"
 		// Ensure directory exists
 		shareDir := filepath.Join(home, ".local", "share")
 		os.MkdirAll(shareDir, 0755)
-		
+
 		scriptPath = filepath.Join(shareDir, "gorgeous-update.sh")
 		scriptContent := fmt.Sprintf(`#!/bin/bash
 sleep 2
-cp "%s" "%s"
-chmod +x "%s"
-rm "%s"
-rm -rf "%s"
-rm "$0"
-`, extractedExe, binPath, binPath, zipPath, tempExtractDir)
+cp "%s" "%s" 2>"%s"
+if [ $? -eq 0 ]; then
+    rm -f "%s"
+    chmod +x "%s"
+    rm -f "%s"
+    rm -rf "%s"
+    rm -f "$0"
+    nohup "%s" &>/dev/null &
+else
+    chmod +x "%s"
+    rm -f "%s"
+    rm -rf "%s"
+    rm -f "$0"
+    nohup "%s" &>/dev/null &
+fi
+`,
+			extractedExe, binPath, errFilePath,
+			errFilePath,
+			binPath,
+			zipPath,
+			tempExtractDir,
+			binPath,
+			currentExe,
+			zipPath,
+			tempExtractDir,
+			currentExe,
+		)
 
 		if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 			return err

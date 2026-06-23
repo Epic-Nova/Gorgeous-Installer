@@ -445,6 +445,7 @@ func (g *GUIApp) Run() {
 	win.Resize(fyne.NewSize(920, 560))
 	win.SetFixedSize(false)
 	win.CenterOnScreen()
+	g.win = win
 
 	win.SetCloseIntercept(func() {
 		// Try to kill UnrealBuildTool in case it was orphaned
@@ -582,9 +583,13 @@ func (g *GUIApp) Run() {
 		anim.Start()
 		
 		if id == panelPublisher {
-			win.Resize(fyne.NewSize(1000, 680))
+			if !win.FullScreen() {
+				win.Resize(fyne.NewSize(1000, 680))
+			}
 		} else {
-			win.Resize(fyne.NewSize(920, 560))
+			if !win.FullScreen() {
+				win.Resize(fyne.NewSize(920, 560))
+			}
 		}
 	}
 
@@ -1282,7 +1287,20 @@ func (g *GUIApp) Run() {
 
 	playBootSequence(win, iconRes, isPackless, mainShell)
 	startRoundedWindowStyling(win.Title(), 32)
-	
+
+	// Check for a previous update error log and show it after the boot sequence
+	if errPath, err := settings.ErrorFilePath(); err == nil {
+		time.AfterFunc(1800*time.Millisecond, func() {
+			if data, err := os.ReadFile(errPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+				msg := strings.TrimSpace(string(data))
+				os.Remove(errPath)
+				fyne.Do(func() {
+					g.showAnimatedDialog("Update Error", "The previous update encountered an error:\n\n"+msg, true)
+				})
+			}
+		})
+	}
+
 	if (g.AutoBuildProject || g.VerifyCompat) && g.ProjectPath != "" {
 		taskType := ProjectTaskAutoLaunch
 		if g.VerifyCompat {
@@ -3267,4 +3285,91 @@ func findUProjectUpwardsFromDir(dir string) string {
 	return ""
 }
 
+// playUpdateSequence transitions the window to a full-screen boot-like update
+// animation with a progress bar and pulsing rings. It returns a status setter
+// function that the caller uses to update the subtitle text.
+func (g *GUIApp) playUpdateSequence(win fyne.Window, iconRes fyne.Resource) func(string) {
+	updateBg := canvas.NewRectangle(gtBg0)
 
+	glow := canvas.NewCircle(withAlpha(gtPrimary, 40))
+	ring := canvas.NewCircle(color.Transparent)
+	ring.StrokeColor = withAlpha(gtBg6, 140)
+	ring.StrokeWidth = 3
+
+	var iconVisual fyne.CanvasObject
+	if iconRes != nil {
+		img := canvas.NewImageFromResource(iconRes)
+		img.FillMode = canvas.ImageFillContain
+		iconVisual = img
+	} else {
+		iconVisual = canvas.NewCircle(gtPrimary)
+	}
+	logoSurface := newGTRoundedSurface(gtBg4, 22, container.NewPadded(iconVisual))
+
+	titleText := canvas.NewText("Gorgeous Installer", gtTextPrimary)
+	titleText.TextSize = 24
+	titleText.TextStyle = fyne.TextStyle{Bold: true}
+
+	subtitleText := canvas.NewText("Downloading update...", gtTextSecondary)
+	subtitleText.TextSize = 12
+
+	progBar := widget.NewProgressBarInfinite()
+
+	updateStage := container.NewWithoutLayout(glow, ring, logoSurface, titleText, subtitleText)
+	updateContent := container.NewStack(updateBg, updateStage, container.NewPadded(
+		container.NewBorder(nil, container.NewPadded(progBar), nil, nil, nil),
+	))
+
+	layoutUpdate := func(iconSize, ringSize float32) {
+		canvasSize := currentCanvasSize(win)
+
+		ringObjectSize := fyne.NewSize(ringSize, ringSize)
+		ring.Resize(ringObjectSize)
+		ring.Move(centeredPos(canvasSize, ringObjectSize, -28))
+
+		glowSize := fyne.NewSize(ringSize+30, ringSize+30)
+		glow.Resize(glowSize)
+		glow.Move(centeredPos(canvasSize, glowSize, -28))
+
+		iconObjectSize := fyne.NewSize(iconSize, iconSize)
+		logoSurface.Resize(iconObjectSize)
+		logoSurface.Move(centeredPos(canvasSize, iconObjectSize, -28))
+
+		titleSize := titleText.MinSize()
+		titleText.Move(centeredPos(canvasSize, titleSize, 50))
+
+		subtitleSize := subtitleText.MinSize()
+		subtitleText.Move(centeredPos(canvasSize, subtitleSize, 72))
+
+		canvas.Refresh(ring)
+		canvas.Refresh(glow)
+		canvas.Refresh(logoSurface)
+		canvas.Refresh(titleText)
+		canvas.Refresh(subtitleText)
+	}
+
+	win.SetContent(updateContent)
+	layoutUpdate(86, 130)
+
+	time.AfterFunc(40*time.Millisecond, func() {
+		fyne.Do(func() { layoutUpdate(86, 130) })
+	})
+
+	ringPulse := canvas.NewSizeAnimation(
+		fyne.NewSize(126, 126), fyne.NewSize(170, 170), 700*time.Millisecond,
+		func(s fyne.Size) { layoutUpdate(86, s.Width) },
+	)
+	ringPulse.AutoReverse = true
+	ringPulse.Curve = fyne.AnimationEaseInOut
+	ringPulse.RepeatCount = fyne.AnimationRepeatForever
+	ringPulse.Start()
+
+	// Return a setter so the caller can update the status subtitle
+	return func(status string) {
+		fyne.Do(func() {
+			subtitleText.Text = status
+			canvas.Refresh(subtitleText)
+			layoutUpdate(86, ring.Size().Width)
+		})
+	}
+}

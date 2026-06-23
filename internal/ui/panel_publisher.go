@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -281,6 +282,10 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			installerPath = ".."
 		}
 	}
+	// Resolve to absolute so the entry is unambiguous and build.sh can always be found.
+	if abs, err := filepath.Abs(installerPath); err == nil {
+		installerPath = abs
+	}
 	installerPathEntry.SetText(installerPath)
 
 	publishBtn = newAccentButton("Sign & Publish", accentUpdate, func() {
@@ -297,20 +302,18 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			publishBtn.SetRunning(true)
 			publishBtn.SetEnabled(false)
 
-			var progress *dialog.CustomDialog
-			var statusLbl *widget.Label
-			var progBar *widget.ProgressBar
-
-			fyne.Do(func() {
-				statusLbl = widget.NewLabel("Starting publish workflow for " + sysName + "...")
-				statusLbl.Wrapping = fyne.TextWrapWord
-				progBar = widget.NewProgressBar()
-				progBar.Max = 4
-				progBar.SetValue(0)
-				content := container.NewVBox(statusLbl, progBar)
-				progress = dialog.NewCustom("Publish Progress", "Hide to Background", content, win)
-				progress.Show()
-			})
+			// Create and show progress dialog synchronously on the main thread.
+			// Do NOT wrap in fyne.Do here — the goroutine below would otherwise
+			// race against the deferred Show and see a nil progress pointer,
+			// causing the dialog to flash and vanish instantly.
+			statusLbl := widget.NewLabel("Starting publish workflow for " + sysName + "...")
+			statusLbl.Wrapping = fyne.TextWrapWord
+			progBar := widget.NewProgressBar()
+			progBar.Max = 4
+			progBar.SetValue(0)
+			content := container.NewVBox(statusLbl, progBar)
+			progress := dialog.NewCustom("Publish Progress", "Hide to Background", content, win)
+			progress.Show()
 
 			updateStatus := func(msg string, args ...any) {
 				text := fmt.Sprintf(msg, args...)
@@ -348,7 +351,9 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 							widget.NewFormItem("Target Plugin", targetPluginEntry),
 							widget.NewFormItem("Display Name", displayNameEntry),
 							widget.NewFormItem("Description", descEntry),
-							widget.NewFormItem("", isCoreCheck),
+						}
+						if publishMode == "Pack Update" {
+							formItems = append(formItems, widget.NewFormItem("", isCoreCheck))
 						}
 						
 						dialog.ShowForm("System Not Found - Register as new Pack?", "Register", "Cancel", formItems, func(b bool) {
@@ -357,7 +362,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 									TargetPluginName: targetPluginEntry.Text,
 									DisplayName:      displayNameEntry.Text,
 									Description:      descEntry.Text,
-									IsCoreSystem:     isCoreCheck.Checked,
+									IsCoreSystem:     publishMode == "Pack Update" && isCoreCheck.Checked,
 								}
 							} else {
 								regChan <- nil
@@ -375,6 +380,11 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 							return
 						}
 						
+						fyne.Do(func() {
+							if progress != nil {
+								progress.Show()
+							}
+						})
 						// The challenge fetched from the first call is already valid and will be signed.
 					} else {
 						fyne.Do(func() {
@@ -414,12 +424,10 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 				if publishMode == "Installer Update" {
 					updateStatus("2. Zipping installer payload...")
-					
-					var srcDir string
-					fyne.Do(func() {
-						srcDir = installerPathEntry.Text
-					})
-					// fallback if empty
+
+					// Read srcDir synchronously — installerPathEntry already holds
+					// the absolute path after the rebuild step patched it.
+					srcDir := installerPathEntry.Text
 					if srcDir == "" {
 						srcDir = "."
 					}
@@ -751,6 +759,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			sysVer := sysVerEntry.Text
 			if publishMode == "Installer Update" {
 				sysVer = installerSysVerEntry.Text
+			} else if publishMode == "Plugin Update" {
+				sysVer = pluginSysVerEntry.Text
 			}
 			if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
 				sysVer = "v" + sysVer
@@ -802,7 +812,10 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				sysDesc = "Core Installer Binary"
 				isInstallerBinary = true
 			}
-			runPublish()
+			sysVerForBuild := installerSysVerEntry.Text
+			g.promptVersionAndRebuild(win, sysVerForBuild, installerPathEntry.Text, isInstallerBinary, func() {
+				runPublish()
+			}, appendStatus)
 			return
 		}
 
@@ -833,6 +846,19 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					Name: "Gorgeous Installer (Binary)",
 				}
 			}
+			if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
+				sysVer = "v" + sysVer
+			}
+			manifestForCapture := manifestToPass
+			sysVerForCapture := sysVer
+			g.promptVersionAndRebuild(win, installerSysVerEntry.Text, installerPathEntry.Text, installerType == "Binary", func() {
+				g.showOfflinePublisherDialog(win, publishMode, manifestForCapture, versions, installerPathEntry.Text, sysVerForCapture, appendStatus)
+			}, appendStatus)
+			return
+		}
+
+		if publishMode == "Plugin Update" {
+			sysVer = pluginSysVerEntry.Text
 		}
 		
 		if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
@@ -874,7 +900,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		),
 	)
 	
-	manageSection := g.buildManageSection(win, appendStatus)
+	manageSection := g.buildManageContentSection(win, appendStatus)
 	manageSection.Hide()
 
 	var changelogSection, pluginInfoSection fyne.CanvasObject
@@ -899,12 +925,12 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		}
 	}
 
-	modeSelector := widget.NewRadioGroup([]string{"Pack Update", "Installer Update", "Plugin Update", "Manage Packs"}, func(s string) {
+	modeSelector := widget.NewRadioGroup([]string{"Pack Update", "Installer Update", "Plugin Update", "Manage Content"}, func(s string) {
 		if publishMode != s {
 			clearState()
 		}
 		publishMode = s
-		if s == "Manage Packs" {
+		if s == "Manage Content" {
 			infoSection.Hide()
 			pluginInfoSection.Hide()
 			installerSection.Hide()
@@ -1005,4 +1031,142 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	split.Offset = 0.65
 
 	return container.NewPadded(split)
+}
+
+// promptVersionAndRebuild asks the user whether to update version strings in
+// build.sh and winres.json and rebuild the installer before publishing.
+// crossWindows controls whether --cross-windows is passed to build.sh.
+// onDone is called when either the rebuild finishes or the user declines.
+func (g *GUIApp) promptVersionAndRebuild(win fyne.Window, rawVer string, srcDir string, crossWindows bool, onDone func(), appendStatus func(string, ...any)) {
+	// Normalise: strip leading v for build.sh (build.sh doesn't want the v)
+	cleanVer := strings.TrimPrefix(rawVer, "v")
+	if cleanVer == "" {
+		// No version specified – go straight to publishing.
+		onDone()
+		return
+	}
+
+	// Show a SINGLE dialog with two inline buttons.
+	// Previously two dialogs were shown back-to-back with an immediate dismissModal()
+	// in between. dismissModal() schedules a 300 ms clear of g.modalLayer — that
+	// delayed wipe destroyed the second dialog, causing the "vanishes instantly" bug.
+	yesBtn := newAccentButton("Update & Rebuild", accentUpdate, func() {
+		g.dismissModal()
+		g.rebuildInstallerWithVersion(win, cleanVer, srcDir, crossWindows, onDone, appendStatus)
+	})
+	skipBtn := widget.NewButton("Skip Rebuild", func() {
+		g.dismissModal()
+		onDone()
+	})
+	skipBtn.Importance = widget.LowImportance
+
+	body := container.NewVBox(
+		widget.NewLabel("Version "+rawVer+" detected. Patch build.sh + winres.json\nand rebuild the installer before publishing?"),
+		widget.NewSeparator(),
+		container.NewHBox(layout.NewSpacer(), skipBtn, yesBtn),
+	)
+	g.showAnimatedCustomDialog("Rebuild Installer?", body, 520, 185, "Cancel", func() {
+		g.dismissModal()
+	})
+}
+
+// rebuildInstallerWithVersion patches version strings and runs ./build.sh --clean.
+// When crossWindows is true, --cross-windows is also passed so the build produces
+// both gorgeous-installer (Linux) and gorgeous-installer.exe (Windows) in build/.
+func (g *GUIApp) rebuildInstallerWithVersion(win fyne.Window, cleanVer string, srcDir string, crossWindows bool, onDone func(), appendStatus func(string, ...any)) {
+	statusLbl := widget.NewLabel("Patching version strings...")
+	statusLbl.Wrapping = fyne.TextWrapWord
+	progBar := widget.NewProgressBarInfinite()
+	content := container.NewVBox(statusLbl, progBar)
+	progress := dialog.NewCustom("Building Installer", "Hide", content, win)
+	progress.Show()
+
+	updateLbl := func(msg string) {
+		appendStatus("%s", msg)
+		fyne.Do(func() { statusLbl.SetText(msg) })
+	}
+
+	go func() {
+		// Resolve srcDir to an absolute path immediately.
+		// installerPathEntry may contain a relative path ("." or "..") which
+		// is interpreted relative to the binary's working directory at launch
+		// time — not necessarily where build.sh lives. Absolute resolution
+		// ensures all subsequent filepath.Join and cmd.Dir calls are correct.
+		absSrcDir, err := filepath.Abs(srcDir)
+		if err != nil {
+			updateLbl("Error resolving source directory: " + err.Error())
+			fyne.Do(func() { progress.Hide() })
+			return
+		}
+		srcDir = absSrcDir
+		updateLbl("Source dir: " + srcDir)
+
+		// --- 1. Patch build.sh ---
+		buildShPath := filepath.Join(srcDir, "build.sh")
+		if data, err := os.ReadFile(buildShPath); err == nil {
+			re := regexp.MustCompile(`(?m)^VERSION="[^"]*"`)
+			patched := re.ReplaceAllString(string(data), `VERSION="`+cleanVer+`"`)
+			if err := os.WriteFile(buildShPath, []byte(patched), 0755); err != nil {
+				updateLbl("Warning: could not patch build.sh: " + err.Error())
+			} else {
+				updateLbl("Patched build.sh version to " + cleanVer)
+			}
+		} else {
+			updateLbl("Warning: could not read build.sh: " + err.Error())
+		}
+
+		// --- 2. Patch winres.json ---
+		// winres.json uses a 4-part version string like "1.0.0.0"
+		winresPath := filepath.Join(srcDir, "winres.json")
+		if data, err := os.ReadFile(winresPath); err == nil {
+			// Build a 4-part version from cleanVer (e.g. "1.2.3" -> "1.2.3.0")
+			parts := strings.Split(cleanVer, ".")
+			for len(parts) < 4 {
+				parts = append(parts, "0")
+			}
+			fourPartVer := strings.Join(parts[:4], ".")
+			re := regexp.MustCompile(`"(file_version|product_version|FileVersion|ProductVersion)":\s*"[^"]*"`)
+			patched := re.ReplaceAllStringFunc(string(data), func(m string) string {
+				keyEnd := strings.Index(m, ":")
+				key := m[:keyEnd+1]
+				return key + ` "` + fourPartVer + `"`
+			})
+			if err := os.WriteFile(winresPath, []byte(patched), 0644); err != nil {
+				updateLbl("Warning: could not patch winres.json: " + err.Error())
+			} else {
+				updateLbl("Patched winres.json version to " + fourPartVer)
+			}
+		} else {
+			updateLbl("Warning: could not read winres.json (skipping): " + err.Error())
+		}
+
+		// --- 3. Run build ---
+		buildArgs := []string{"--clean"}
+		if crossWindows {
+			buildArgs = append(buildArgs, "--cross-windows")
+			updateLbl("Running ./build.sh --clean --cross-windows (Linux + Windows)...")
+		} else {
+			updateLbl("Running ./build.sh --clean ...")
+		}
+		var cmd *exec.Cmd
+		if runtime.GOOS == "windows" {
+			// On Windows use build.ps1 (cross-compile not applicable from Windows)
+			cmd = exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", filepath.Join(srcDir, "build.ps1"), "-Clean")
+		} else {
+			args := append([]string{filepath.Join(srcDir, "build.sh")}, buildArgs...)
+			cmd = exec.Command("bash", args...)
+		}
+		cmd.Dir = srcDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			updateLbl("Build failed: " + err.Error() + "\n" + string(out))
+			fyne.Do(func() { progress.Hide() })
+			return
+		}
+		updateLbl("Build succeeded.")
+		fyne.Do(func() {
+			progress.Hide()
+			onDone() // run on main thread so runPublish() can safely create Fyne widgets
+		})
+	}()
 }

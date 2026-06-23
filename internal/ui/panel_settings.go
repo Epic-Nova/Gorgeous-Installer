@@ -12,7 +12,9 @@ import (
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/updater"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -85,6 +87,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 	installerVBox := container.NewVBox(
 		container.NewHBox(newGTLabel("Local Bin Directory:"), binPathLbl),
 		container.NewHBox(changeBinBtn, layout.NewSpacer()),
+		container.NewHBox(newGTLabel("Installed Version:"), newGTValueLabel(buildinfo.Version)),
 	)
 		
 	if runtime.GOOS == "windows" {
@@ -172,22 +175,49 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 	if !skipUpdateCheck {
 		newVer, ok := updater.CheckForUpdates(buildinfo.Version, appSettings.InstalledNatively)
 		if ok {
-			updateBtn := newAccentButton("Update to v"+newVer, accentUpdate, func() {
+			// Prevent double-v prefix (API already returns e.g. "vDev" or "v1.2.0")
+			displayVer := newVer
+			if !strings.HasPrefix(strings.ToLower(displayVer), "v") {
+				displayVer = "v" + displayVer
+			}
+			updateBtn := newAccentButton("Update to "+displayVer, accentUpdate, func() {
+				if g.win == nil {
+					return
+				}
+				iconRes := loadIconResource()
+				setStatus := g.playUpdateSequence(g.win, iconRes)
+				setStatus("Downloading " + displayVer + "...")
+
 				binPath := appSettings.LocalBinPath + "/gorgeous-installer"
 				if runtime.GOOS == "windows" {
 					binPath += ".exe"
 				}
 				if !appSettings.InstalledNatively {
-					binPath = "." // for source update, extract into current dir
+					binPath = "."
 				}
-				err := updater.PerformUpdate(binPath, appSettings.InstalledNatively)
-				if err == nil {
-					appendStatus("Update started. Installer will now restart.")
-					time.Sleep(500 * time.Millisecond)
-					os.Exit(0)
-				} else {
-					appendStatus("Update failed: %v", err)
-				}
+
+				go func() {
+					setStatus("Applying update...")
+					err := updater.PerformUpdate(binPath, appSettings.InstalledNatively)
+					if err == nil {
+						setStatus("Restarting...")
+						time.Sleep(500 * time.Millisecond)
+						// For source-mode updates the new files are already in place;
+						// relaunch ourselves before exiting.
+						if !appSettings.InstalledNatively {
+							if exe, e := os.Executable(); e == nil {
+								exec.Command(exe).Start() //nolint:errcheck
+							}
+						}
+						os.Exit(0)
+					} else {
+						// Write error file and restore UI
+						if errPath, pathErr := settings.ErrorFilePath(); pathErr == nil {
+							os.WriteFile(errPath, []byte(err.Error()), 0644) //nolint:errcheck
+						}
+						appendStatus("Update failed: %v", err)
+					}
+				}()
 			})
 			updateSection = newGTCard("Update Available", "A newer version of Gorgeous Installer is available", container.NewVBox(updateBtn))
 		} else {

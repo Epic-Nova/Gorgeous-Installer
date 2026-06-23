@@ -148,6 +148,12 @@ func runCLIMode(cfg *config.Config, opts cliOptions) {
 			os.Exit(1)
 		}
 		fmt.Println("Update successful.")
+		if opts.ReopenProject {
+			if err := unreal.OpenProject(opts.ProjectPath); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to reopen project: %v\n", err)
+				os.Exit(1)
+			}
+		}
 		return
 	}
 

@@ -137,3 +137,13 @@ func IsInstalledNatively() bool {
 	binPath = filepath.Clean(binPath)
 	return execPath == binPath
 }
+
+// ErrorFilePath returns the path to the update_error.txt file.
+func ErrorFilePath() (string, error) {
+	cfgDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cfgDir, "GorgeousThings", "update_error.txt"), nil
+}
+

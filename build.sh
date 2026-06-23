@@ -1,17 +1,19 @@
 #!/bin/bash
 set -e
 
-# Build script for Gorgeous Installer (Linux)
+# Build script for Gorgeous Installer
 
 CLEAN=false
 USE_UPX=false
 SKIP_UPX=false
+CROSS_WINDOWS=false
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --clean) CLEAN=true ;;
         --use-upx) USE_UPX=true ;;
         --skip-upx) SKIP_UPX=true ;;
+        --cross-windows) CROSS_WINDOWS=true ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
     shift
@@ -205,7 +207,7 @@ META_EOF
 
 cat <<EOF > "build/gorgeous-installer.desktop"
 [Desktop Entry]
-Version=1.0
+Version=$VERSION
 Type=Application
 Name=Gorgeous Installer
 Comment=Installation and recompilation tool for Gorgeous plugins
@@ -214,5 +216,31 @@ Icon=$(pwd)/icon.png
 Terminal=false
 Categories=Development;
 EOF
+
+# ── Windows cross-compile ──────────────────────────────────────────────────
+if [ "$CROSS_WINDOWS" = true ]; then
+    WIN_EXE="$BUILD_DIR/gorgeous-installer.exe"
+    WIN_CC="x86_64-w64-mingw32-gcc"
+
+    if ! command -v "$WIN_CC" &> /dev/null; then
+        echo "Warning: $WIN_CC not found – skipping Windows cross-compile."
+        echo "Install mingw-w64 (e.g. sudo apt install gcc-mingw-w64-x86-64) to enable it."
+    else
+        echo "Cross-compiling for Windows (amd64)..."
+        GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$WIN_CC" \
+            go build -ldflags "-s -w -H windowsgui" -o "$WIN_EXE" ./cmd/main
+
+        if [ "$SKIP_UPX" = false ]; then
+            WIN_UPX_BIN=$(resolve_upx)
+            if [ -n "$WIN_UPX_BIN" ]; then
+                echo "Compressing Windows executable with UPX..."
+                "$WIN_UPX_BIN" --best --lzma "$WIN_EXE" || echo "UPX compression failed for Windows build"
+            fi
+        fi
+
+        sha256sum "$WIN_EXE" > "$WIN_EXE.sha256"
+        echo "Windows build: $WIN_EXE"
+    fi
+fi
 
 echo "Build successful! Output in $(pwd)/build"
