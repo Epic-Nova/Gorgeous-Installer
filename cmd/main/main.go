@@ -112,6 +112,11 @@ func main() {
 		return
 	}
 
+	if opts.WaitForPID != 0 || opts.VerifyCompatibility {
+		runGUIMode(cfg, opts)
+		return
+	}
+
 	// Double-click or open-with behavior: if the only arg is a .uproject file
 	if opts.ProjectPath != "" && strings.HasSuffix(strings.ToLower(opts.ProjectPath), ".uproject") && 
 		opts.PackType == "" && opts.InstallAction == "" && !opts.RecompileOnly && !opts.VerifyCompatibility {
