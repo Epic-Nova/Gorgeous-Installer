@@ -334,6 +334,7 @@ type GUIApp struct {
 	VerifyCompat     bool
 	ProjectPath      string
 	installSucceeded bool
+	installZipPath   string
 
 	win          fyne.Window
 	modalLayer   *fyne.Container
@@ -409,8 +410,8 @@ func (l *modalGroupLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 }
 
 // NewGUIApp creates a new GUI app instance.
-func NewGUIApp(cfg *config.Config, recompileOnly bool, waitPid int, reopenProject bool, autoBuildProject bool, verifyCompat bool) *GUIApp {
-	return &GUIApp{config: cfg, recompileOnly: recompileOnly, waitForPID: waitPid, reopenProject: reopenProject, AutoBuildProject: autoBuildProject, VerifyCompat: verifyCompat}
+func NewGUIApp(cfg *config.Config, recompileOnly bool, waitPid int, reopenProject bool, autoBuildProject bool, verifyCompat bool, installZip string) *GUIApp {
+	return &GUIApp{config: cfg, recompileOnly: recompileOnly, waitForPID: waitPid, reopenProject: reopenProject, AutoBuildProject: autoBuildProject, VerifyCompat: verifyCompat, installZipPath: installZip}
 }
 
 func (g *GUIApp) isPackless() bool {
@@ -834,7 +835,7 @@ func (g *GUIApp) Run() {
 		}
 
 		selectedVersion := currentSelectedVersion(autoPackVersion, manualVersionSel, versionSelect)
-		if !isPackless && selectedVersion == "" {
+		if !isPackless && selectedVersion == "" && g.installZipPath == "" {
 			if manualVersionSel {
 				g.showAnimatedDialog("Error", "please select a pack version", true)
 			} else {
@@ -1163,7 +1164,7 @@ func (g *GUIApp) Run() {
 			time.AfterFunc(800*time.Millisecond, func() {
 				fyne.Do(func() { actionBtn.Trigger() })
 			})
-		} else if g.installZipPath != "" && g.waitForPID == 0 {
+		} else if g.installZipPath != "" {
 			time.AfterFunc(800*time.Millisecond, func() {
 				fyne.Do(func() { actionBtn.Trigger() })
 			})
