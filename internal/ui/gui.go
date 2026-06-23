@@ -1319,6 +1319,14 @@ func (g *GUIApp) Run() {
 		})
 	}
 
+	if g.installZipPath != "" && g.ProjectPath != "" {
+		time.AfterFunc(1500 * time.Millisecond, func() {
+			fyne.Do(func() {
+				g.showProjectTaskModal(g.ProjectPath, "", ProjectTaskInstallZip)
+			})
+		})
+	}
+
 	win.ShowAndRun()
 
 	unreal.KillUBT()
@@ -2945,6 +2953,7 @@ const (
 	ProjectTaskBuild
 	ProjectTaskGenerate
 	ProjectTaskVerifyCompat
+	ProjectTaskInstallZip
 )
 
 func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType ProjectTaskType) {
@@ -3199,7 +3208,10 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 
 	go func() {
 		var err error
-		if taskType == ProjectTaskAutoLaunch || taskType == ProjectTaskVerifyCompat || taskType == ProjectTaskGenerate {
+		if taskType == ProjectTaskInstallZip {
+			logFn("Installing update from zip...")
+			err = installer.ProcessZipUpdate(g.installZipPath, projectPath, g.waitForPID)
+		} else if taskType == ProjectTaskAutoLaunch || taskType == ProjectTaskVerifyCompat || taskType == ProjectTaskGenerate {
 			logFn("Generating project files for %s...", pName)
 			err = unreal.GenerateProjectFiles(cancelCtx, projectPath, logFn)
 		}
@@ -3239,9 +3251,9 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 					logFn("Launching project...")
 					unreal.OpenProject(projectPath)
 					os.Exit(0)
-				} else if taskType == ProjectTaskVerifyCompat {
+				} else if taskType == ProjectTaskVerifyCompat || taskType == ProjectTaskInstallZip {
 					g.installSucceeded = true
-					logFn("Compilation successful. Returning to Unreal Engine...")
+					logFn("Installation complete. Returning to Unreal Engine...")
 					time.AfterFunc(2*time.Second, func() {
 						fyne.Do(func() {
 							if g.win != nil {
