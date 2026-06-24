@@ -28,6 +28,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/go-piv/piv-go/piv"
 	bundle "gorgeous-installer"
 	"gorgeous-installer/internal/api"
 	"gorgeous-installer/internal/buildinfo"
@@ -36,14 +37,13 @@ import (
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/unreal"
 	"gorgeous-installer/internal/updater"
-	"github.com/go-piv/piv-go/piv"
 )
 
 // ─── GT Brand Design Tokens ──────────────────────────────────────────────────
 // Primary palette from darkest to brightest — these define the GT ecosystem.
 
 var (
-	gtBg0     = color.NRGBA{R: 4, G: 31, B: 44, A: 255}   // #041f2c  window background
+	gtBg0     = color.NRGBA{R: 4, G: 31, B: 44, A: 255}    // #041f2c  window background
 	gtBg1     = color.NRGBA{R: 5, G: 42, B: 59, A: 255}    // #052a3b  panel surface
 	gtBg2     = color.NRGBA{R: 9, G: 62, B: 86, A: 255}    // #093e56  card
 	gtBg3     = color.NRGBA{R: 11, G: 80, B: 110, A: 255}  // #0b506e  card elevated
@@ -60,12 +60,12 @@ var (
 	gtTextMuted     = color.NRGBA{R: 38, G: 68, B: 86, A: 255}
 
 	// Mode-specific accent colors (chosen to complement the GT palette)
-	accentInstall   = gtPrimary                                         // teal   – install
-	accentRecompile = color.NRGBA{R: 127, G: 79, B: 240, A: 255}      // purple – recompile
-	accentUpdate    = color.NRGBA{R: 240, G: 165, B: 52, A: 255}      // amber  – update
-	accentReinstall = gtBg6                                             // bright – reinstall
-	accentSuccess   = color.NRGBA{R: 44, G: 182, B: 125, A: 255}      // green  – success
-	accentError     = color.NRGBA{R: 229, G: 49, B: 112, A: 255}      // red    – error
+	accentInstall   = gtPrimary                                  // teal   – install
+	accentRecompile = color.NRGBA{R: 127, G: 79, B: 240, A: 255} // purple – recompile
+	accentUpdate    = color.NRGBA{R: 240, G: 165, B: 52, A: 255} // amber  – update
+	accentReinstall = gtBg6                                      // bright – reinstall
+	accentSuccess   = color.NRGBA{R: 44, G: 182, B: 125, A: 255} // green  – success
+	accentError     = color.NRGBA{R: 229, G: 49, B: 112, A: 255} // red    – error
 )
 
 // withAlpha returns a copy of c with the given alpha.
@@ -194,7 +194,7 @@ func (r *navButtonRenderer) Refresh() {
 	canvas.Refresh(r.lbl)
 }
 
-func (r *navButtonRenderer) Destroy() {}
+func (r *navButtonRenderer) Destroy()                     {}
 func (r *navButtonRenderer) Objects() []fyne.CanvasObject { return r.objs }
 
 // ─── accentButton ────────────────────────────────────────────────────────────
@@ -216,11 +216,15 @@ func newAccentButton(label string, accent color.NRGBA, onTap func()) *accentButt
 	return b
 }
 
-func (b *accentButton) SetLabel(l string)               { b.label = l; b.Refresh() }
-func (b *accentButton) SetAccent(a color.NRGBA)         { b.accent = a; b.Refresh() }
-func (b *accentButton) SetEnabled(e bool)               { b.enabled = e; b.Refresh() }
-func (b *accentButton) SetRunning(r bool)               { b.running = r; b.Refresh() }
-func (b *accentButton) Trigger()                        { if b.enabled && !b.running && b.onTap != nil { b.onTap() } }
+func (b *accentButton) SetLabel(l string)       { b.label = l; b.Refresh() }
+func (b *accentButton) SetAccent(a color.NRGBA) { b.accent = a; b.Refresh() }
+func (b *accentButton) SetEnabled(e bool)       { b.enabled = e; b.Refresh() }
+func (b *accentButton) SetRunning(r bool)       { b.running = r; b.Refresh() }
+func (b *accentButton) Trigger() {
+	if b.enabled && !b.running && b.onTap != nil {
+		b.onTap()
+	}
+}
 
 func (b *accentButton) Tapped(_ *fyne.PointEvent) { b.Trigger() }
 
@@ -336,11 +340,11 @@ type GUIApp struct {
 	installSucceeded bool
 	installZipPath   string
 
-	win          fyne.Window
-	modalLayer   *fyne.Container
-	toastLayer   *fyne.Container
-	toastLayout  *toastLayout
-	
+	win         fyne.Window
+	modalLayer  *fyne.Container
+	toastLayer  *fyne.Container
+	toastLayout *toastLayout
+
 	navItemsBox     *fyne.Container
 	navPublisherBtn *navButton
 }
@@ -398,12 +402,12 @@ func (l *modalGroupLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	if len(objects) >= 2 {
 		card := objects[0]
 		badge := objects[1]
-		
+
 		w := l.width * l.scale
 		h := l.height * l.scale
 		card.Resize(fyne.NewSize(w, h))
-		card.Move(fyne.NewPos(0, 45*l.scale + l.offsetY))
-		
+		card.Move(fyne.NewPos(0, 45*l.scale+l.offsetY))
+
 		badge.Resize(fyne.NewSize(90*l.scale, 90*l.scale))
 		badge.Move(fyne.NewPos((w-(90*l.scale))/2, l.offsetY))
 	}
@@ -490,7 +494,6 @@ func (g *GUIApp) Run() {
 	})
 	autoScrollCheck.SetChecked(true)
 
-
 	autoScrollCheck.SetChecked(true)
 
 	lastLineLbl := canvas.NewText("Ready.", gtTextSecondary)
@@ -501,17 +504,19 @@ func (g *GUIApp) Run() {
 	appendStatus := func(msg string, args ...any) {
 		line := fmt.Sprintf(msg, args...)
 		cleanLine := strings.TrimRight(line, "\r\n")
-		
+
 		mu.Lock()
 		logText.WriteString(cleanLine + "\n")
-		
+
 		str := logText.String()
 		newlineCount := strings.Count(str, "\n")
 		if newlineCount > 1000 {
 			idx := 0
 			for i := 0; i < newlineCount-1000; i++ {
 				nextIdx := strings.Index(str[idx:], "\n")
-				if nextIdx == -1 { break }
+				if nextIdx == -1 {
+					break
+				}
 				idx += nextIdx + 1
 			}
 			newStr := str[idx:]
@@ -528,7 +533,7 @@ func (g *GUIApp) Run() {
 				text := logText.String()
 				uiUpdateQueued = false
 				mu.Unlock()
-				
+
 				fyne.Do(func() {
 					logLbl.SetText(text)
 					if autoScroll {
@@ -558,7 +563,7 @@ func (g *GUIApp) Run() {
 		for pid, btn := range navBtns {
 			btn.SetActive(pid == id)
 		}
-		
+
 		target := panelObjs[id]
 		if target == nil || target == currentVisiblePanel {
 			return
@@ -570,7 +575,7 @@ func (g *GUIApp) Run() {
 			// but we can just use Show/Hide and let the container relayout.
 			currentVisiblePanel.Hide()
 		}
-		
+
 		target.Show()
 		currentVisiblePanel = target
 
@@ -582,7 +587,7 @@ func (g *GUIApp) Run() {
 		})
 		anim.Curve = fyne.AnimationEaseOut
 		anim.Start()
-		
+
 		if id == panelPublisher {
 			if !win.FullScreen() {
 				win.Resize(fyne.NewSize(1000, 680))
@@ -1081,7 +1086,7 @@ func (g *GUIApp) Run() {
 	}
 	navItems.Add(futureDivider)
 	navItems.Add(navProjMgr)
-	
+
 	// The Publisher button is now dynamically toggled via YubiKey listener
 
 	// Make navItems and navPublisher globally accessible for settings panel if we want real-time toggle
@@ -1097,10 +1102,10 @@ func (g *GUIApp) Run() {
 	sidebarSep.SetMinSize(fyne.NewSize(1, 0))
 
 	// ── Main shell ────────────────────────────────────────────────────────────
-	
+
 	// Create an inner wrapper for the right content so it's fully padded and rounded properly
 	rightContent := container.NewBorder(nil, nil, sidebarSep, nil, contentStack)
-			appInner := container.NewBorder(nil, nil, sidebar, nil, rightContent)
+	appInner := container.NewBorder(nil, nil, sidebar, nil, rightContent)
 
 	appBorder := canvas.NewRectangle(color.Transparent)
 	appBorder.CornerRadius = 20
@@ -1125,8 +1130,8 @@ func (g *GUIApp) Run() {
 
 	appFrame := container.NewStack(
 		newGTRoundedSurface(withAlpha(gtBg1, 230), 20, nil), // translucent glass bg fill
-		appBorder,                           // border glow
-		container.NewPadded(appInner),       // Use padding to separate shell edges
+		appBorder,                     // border glow
+		container.NewPadded(appInner), // Use padding to separate shell edges
 	)
 
 	if g.AutoBuildProject {
@@ -1191,7 +1196,7 @@ func (g *GUIApp) Run() {
 	}
 
 	appSettings, _ := settings.LoadSettings()
-	
+
 	// Determine DevMode based on context
 	isDev := appSettings.DevMode
 	if appSettings.InstalledNatively {
@@ -1248,7 +1253,7 @@ func (g *GUIApp) Run() {
 		for {
 			cards, err := piv.Cards()
 			yubiConnected := err == nil && len(cards) > 0
-			
+
 			configured := false
 			if yubiConnected {
 				cardName := cards[0]
@@ -1330,8 +1335,8 @@ func (g *GUIApp) Run() {
 		if g.VerifyCompat {
 			taskType = ProjectTaskVerifyCompat
 		}
-		
-		time.AfterFunc(1500 * time.Millisecond, func() {
+
+		time.AfterFunc(1500*time.Millisecond, func() {
 			fyne.Do(func() {
 				g.showProjectTaskModal(g.ProjectPath, "", taskType)
 			})
@@ -1339,7 +1344,7 @@ func (g *GUIApp) Run() {
 	}
 
 	if g.installZipPath != "" && g.ProjectPath != "" {
-		time.AfterFunc(1500 * time.Millisecond, func() {
+		time.AfterFunc(1500*time.Millisecond, func() {
 			fyne.Do(func() {
 				g.showProjectTaskModal(g.ProjectPath, "", ProjectTaskInstallZip)
 			})
@@ -1401,12 +1406,12 @@ func (g *GUIApp) buildInstallerPanel(
 	var toggleBtn *widget.Button
 
 	logLayout := &logAnimLayout{height: 140}
-	
+
 	// Create visual bounds similar to widget.Entry to satisfy "without changing actual log box" visually
 	logBoxBg := newGTRoundedSurface(withAlpha(gtBg0, 100), 4, nil)
 	paddedLogScroll := container.NewPadded(logScroll)
 	logContainer := container.NewStack(logBoxBg, paddedLogScroll)
-	
+
 	animLogContainer := container.New(logLayout, logContainer)
 
 	toggleBtn = widget.NewButtonWithIcon("", theme.MenuDropUpIcon(), func() {
@@ -1415,7 +1420,7 @@ func (g *GUIApp) buildInstallerPanel(
 			logExpanded = false
 			lastLineLbl.Show()
 			toggleBtn.SetIcon(theme.MenuDropDownIcon())
-			
+
 			anim := fyne.NewAnimation(300*time.Millisecond, func(v float32) {
 				logLayout.height = 140 * (1 - v)
 				animLogContainer.Refresh()
@@ -1427,7 +1432,7 @@ func (g *GUIApp) buildInstallerPanel(
 			logExpanded = true
 			lastLineLbl.Hide()
 			toggleBtn.SetIcon(theme.MenuDropUpIcon())
-			
+
 			anim := fyne.NewAnimation(300*time.Millisecond, func(v float32) {
 				logLayout.height = 140 * v
 				animLogContainer.Refresh()
@@ -1690,17 +1695,17 @@ func (g *GUIApp) buildSHAValidatorPanel(
 
 				if validateErr != nil {
 					appendStatus("SHA validation failed: %v", validateErr)
-					g.showInstallResult(false, validateErr.Error(), iconRes, "", nil, "Close", func(){}, "sha validation")
+					g.showInstallResult(false, validateErr.Error(), iconRes, "", nil, "Close", func() {}, "sha validation")
 					return
 				}
 				resultMessage := formatSHAValidationMessage(report)
 				if report.IsValid() {
 					appendStatus("SHA validation successful for %s", report.PackVersion)
-					g.showInstallResult(true, resultMessage, iconRes, "", nil, "Close", func(){}, "sha validation")
+					g.showInstallResult(true, resultMessage, iconRes, "", nil, "Close", func() {}, "sha validation")
 					return
 				}
 				appendStatus("SHA validation reported differences for %s", report.PackVersion)
-				g.showInstallResult(false, resultMessage, iconRes, "", nil, "Close", func(){}, "sha validation")
+				g.showInstallResult(false, resultMessage, iconRes, "", nil, "Close", func() {}, "sha validation")
 			})
 		}(selectedPack, manifestPath)
 	})
@@ -2013,15 +2018,15 @@ func (g *GUIApp) showInstallResult(success bool, message string, iconRes fyne.Re
 	// Layout and Overlay
 	layoutState := &modalGroupLayout{width: 700, height: 480, scale: 0.9, offsetY: 25}
 	modalGroup := container.New(layoutState, card, badge)
-	
+
 	backdrop.FillColor = color.Transparent
 	blobA.Resize(fyne.NewSize(800, 800))
 	blobA.Move(fyne.NewPos(-100, 200))
 	blobB.Resize(fyne.NewSize(700, 700))
 	blobB.Move(fyne.NewPos(400, -200))
-	
+
 	stage := container.NewStack(backdrop, container.NewWithoutLayout(blobA, blobB), container.NewCenter(modalGroup))
-	
+
 	g.modalLayer.Objects = []fyne.CanvasObject{stage}
 	g.modalLayer.Refresh()
 
@@ -2032,7 +2037,7 @@ func (g *GUIApp) showInstallResult(success bool, message string, iconRes fyne.Re
 	})
 	bgAnim.Start()
 
-	anim := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+	anim := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		layoutState.scale = 0.9 + (0.1 * v)
 		layoutState.offsetY = 25 * (1 - v)
@@ -2266,7 +2271,7 @@ func (h *dragHandle) Dragged(ev *fyne.DragEvent) {
 	h.onDrag(ev.Dragged.DX, ev.Dragged.DY)
 }
 
-func (h *dragHandle) DragEnd()                           { h.nativeDrag = false }
+func (h *dragHandle) DragEnd() { h.nativeDrag = false }
 func (h *dragHandle) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(canvas.NewRectangle(color.Transparent))
 }
@@ -2621,7 +2626,7 @@ func (g *GUIApp) dismissModal() {
 		return
 	}
 	stage := g.modalLayer.Objects[0]
-	animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 300*time.Millisecond, func(p fyne.Position) {
+	animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 300*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		// Just fade it out quickly
 		if stack, ok := stage.(*fyne.Container); ok && len(stack.Objects) > 0 {
@@ -2646,7 +2651,7 @@ func (g *GUIApp) showUpdateToast(newVer string, onUpdateTap func()) {
 		g.toastLayer.Refresh()
 		onUpdateTap()
 	})
-	
+
 	iconTxt := canvas.NewText("✨", color.White)
 	iconTxt.TextSize = 22
 	iconBox := container.NewCenter(iconTxt)
@@ -2654,38 +2659,38 @@ func (g *GUIApp) showUpdateToast(newVer string, onUpdateTap func()) {
 	title := canvas.NewText("Update Available", gtTextPrimary)
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.TextSize = 14
-	
+
 	msg := canvas.NewText("Version "+newVer+" is ready.", gtTextSecondary)
 	msg.TextSize = 12
-	
+
 	textCol := container.NewVBox(title, msg)
-	
+
 	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), container.NewPadded(updateBtn), container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
-	
+
 	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
 	g.toastLayer.Add(toastCard)
 	g.toastLayer.Refresh()
-	
+
 	// Animate in by sliding up
-	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
 		g.toastLayer.Refresh()
 	})
 	animIn.Curve = fyne.AnimationEaseOut
 	animIn.Start()
-	
+
 	// Animate away
-	time.AfterFunc(5 * time.Second, func() {
+	time.AfterFunc(5*time.Second, func() {
 		fyne.Do(func() {
-			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
 				g.toastLayout.offsetY = 150 * v // slide back down
 				g.toastLayer.Refresh()
 			})
 			animOut.Curve = fyne.AnimationEaseIn
 			animOut.Start()
-			
+
 			time.AfterFunc(450*time.Millisecond, func() {
 				fyne.Do(func() {
 					g.toastLayer.Remove(toastCard)
@@ -2707,38 +2712,38 @@ func (g *GUIApp) showDevModeToast() {
 	title := canvas.NewText("Dev Mode Activated", gtTextPrimary)
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.TextSize = 14
-	
+
 	msg := canvas.NewText("Operating in HTTP is dangerous.", gtTextSecondary)
 	msg.TextSize = 12
-	
+
 	textCol := container.NewVBox(title, msg)
-	
+
 	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
-	
+
 	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
 	g.toastLayer.Add(toastCard)
 	g.toastLayer.Refresh()
-	
+
 	// Animate in by sliding up
-	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
 		g.toastLayer.Refresh()
 	})
 	animIn.Curve = fyne.AnimationEaseOut
 	animIn.Start()
-	
+
 	// Animate away
-	time.AfterFunc(8 * time.Second, func() {
+	time.AfterFunc(8*time.Second, func() {
 		fyne.Do(func() {
-			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
 				g.toastLayout.offsetY = 150 * v // slide back down
 				g.toastLayer.Refresh()
 			})
 			animOut.Curve = fyne.AnimationEaseIn
 			animOut.Start()
-			
+
 			time.AfterFunc(450*time.Millisecond, func() {
 				fyne.Do(func() {
 					g.toastLayer.Remove(toastCard)
@@ -2760,38 +2765,38 @@ func (g *GUIApp) showPublisherUnlockedToast() {
 	title := canvas.NewText("Publisher UI Unlocked", accentSuccess)
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.TextSize = 14
-	
+
 	msg := canvas.NewText("YubiKey connected and configured.", gtTextSecondary)
 	msg.TextSize = 12
-	
+
 	textCol := container.NewVBox(title, msg)
-	
+
 	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
-	
+
 	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
 	g.toastLayer.Add(toastCard)
 	g.toastLayer.Refresh()
-	
+
 	// Animate in by sliding up
-	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		g.toastLayout.offsetY = 150 * (1 - v)
 		g.toastLayer.Refresh()
 	})
 	animIn.Curve = fyne.AnimationEaseOut
 	animIn.Start()
-	
+
 	// Animate away
-	time.AfterFunc(8 * time.Second, func() {
+	time.AfterFunc(8*time.Second, func() {
 		fyne.Do(func() {
-			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
 				g.toastLayout.offsetY = 150 * v
 				g.toastLayer.Refresh()
 			})
 			animOut.Curve = fyne.AnimationEaseIn
 			animOut.Start()
-			
+
 			time.AfterFunc(450*time.Millisecond, func() {
 				fyne.Do(func() {
 					g.toastLayer.Remove(toastCard)
@@ -2813,38 +2818,38 @@ func (g *GUIApp) showOfflineToast() {
 	title := canvas.NewText("Offline Mode", gtTextPrimary)
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.TextSize = 14
-	
+
 	msg := canvas.NewText("We are offline and operating in HTTP is dangerous.", gtTextSecondary)
 	msg.TextSize = 12
-	
+
 	textCol := container.NewVBox(title, msg)
-	
+
 	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
-	
+
 	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
 	g.toastLayer.Add(toastCard)
 	g.toastLayer.Refresh()
-	
+
 	// Animate in by sliding up
-	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
 		g.toastLayer.Refresh()
 	})
 	animIn.Curve = fyne.AnimationEaseOut
 	animIn.Start()
-	
+
 	// Animate away
-	time.AfterFunc(8 * time.Second, func() {
+	time.AfterFunc(8*time.Second, func() {
 		fyne.Do(func() {
-			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
 				g.toastLayout.offsetY = 150 * v // slide back down
 				g.toastLayer.Refresh()
 			})
 			animOut.Curve = fyne.AnimationEaseIn
 			animOut.Start()
-			
+
 			time.AfterFunc(450*time.Millisecond, func() {
 				fyne.Do(func() {
 					g.toastLayer.Remove(toastCard)
@@ -2866,38 +2871,38 @@ func (g *GUIApp) showLaunchToast(projName string) {
 	title := canvas.NewText("Launching Project", gtTextPrimary)
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.TextSize = 14
-	
+
 	msg := canvas.NewText("Opening "+projName+" in Unreal Editor...", gtTextSecondary)
 	msg.TextSize = 12
-	
+
 	textCol := container.NewVBox(title, msg)
-	
+
 	content := container.NewBorder(nil, nil, container.NewPadded(iconBox), nil, container.NewVBox(layout.NewSpacer(), textCol, layout.NewSpacer()))
-	
+
 	toastCard := newGTRoundedSurface(withAlpha(gtBg2, 240), 16, container.NewPadded(content))
 	g.toastLayer.Add(toastCard)
 	g.toastLayer.Refresh()
-	
+
 	// Animate in by sliding up
-	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		g.toastLayout.offsetY = 150 * (1 - v) // slide up from 150px below
 		g.toastLayer.Refresh()
 	})
 	animIn.Curve = fyne.AnimationEaseOut
 	animIn.Start()
-	
+
 	// Animate away
-	time.AfterFunc(6 * time.Second, func() {
+	time.AfterFunc(6*time.Second, func() {
 		fyne.Do(func() {
-			animOut := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 400*time.Millisecond, func(p fyne.Position) {
+			animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 				v := p.X
 				g.toastLayout.offsetY = 150 * v // slide back down
 				g.toastLayer.Refresh()
 			})
 			animOut.Curve = fyne.AnimationEaseIn
 			animOut.Start()
-			
+
 			time.AfterFunc(450*time.Millisecond, func() {
 				fyne.Do(func() {
 					g.toastLayer.Remove(toastCard)
@@ -2907,7 +2912,6 @@ func (g *GUIApp) showLaunchToast(projName string) {
 		})
 	})
 }
-
 
 // ─── Animated Dialogs ────────────────────────────────────────────────────────
 
@@ -2945,7 +2949,7 @@ func (g *GUIApp) showAnimatedCustomDialog(title string, content fyne.CanvasObjec
 	if onDismiss == nil {
 		onDismiss = func() { g.dismissModal() }
 	}
-	
+
 	closeBtn := widget.NewButton(dismissLabel, onDismiss)
 	closeBtn.Importance = widget.HighImportance
 
@@ -2975,7 +2979,7 @@ func (g *GUIApp) showAnimatedCustomDialog(title string, content fyne.CanvasObjec
 	})
 	bgAnim.Start()
 
-	anim := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 300*time.Millisecond, func(p fyne.Position) {
+	anim := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 300*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		layoutState.scale = 0.9 + (0.1 * v)
 		layoutState.offsetY = 25 * (1 - v)
@@ -2988,6 +2992,7 @@ func (g *GUIApp) showAnimatedCustomDialog(title string, content fyne.CanvasObjec
 // ─── Project Task Modal ──────────────────────────────────────────────────────
 
 type ProjectTaskType int
+
 const (
 	ProjectTaskAutoLaunch ProjectTaskType = iota
 	ProjectTaskBuild
@@ -3015,16 +3020,16 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 	progress.Max = 1.0
 	progress.SetValue(0)
 	progress.Hide()
-	
+
 	progressContainer := container.NewStack(progressInfinite, progress)
-	
+
 	isInfinite := true
 
 	var logLines []string
 	logLbl := widget.NewLabel("")
 	logLbl.Wrapping = fyne.TextWrapWord
 	logScroll := container.NewScroll(logLbl)
-	
+
 	logContainer := container.NewGridWrap(fyne.NewSize(600, 260), newGTRoundedSurface(withAlpha(gtBg0, 150), 8, logScroll))
 	logContainer.Hide()
 
@@ -3049,7 +3054,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 			logContainer.Show()
 			autoScrollCheck.Show()
 			logBtn.SetText("Hide Logs")
-			
+
 			// Animate expand
 			anim := fyne.NewAnimation(300*time.Millisecond, func(v float32) {
 				if layoutState != nil && modalGroup != nil {
@@ -3062,7 +3067,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 		} else {
 			logBtn.SetText("Show Logs")
 			autoScrollCheck.Hide()
-			
+
 			// Animate collapse
 			anim := fyne.NewAnimation(300*time.Millisecond, func(v float32) {
 				if layoutState != nil && modalGroup != nil {
@@ -3072,7 +3077,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 			})
 			anim.Curve = fyne.AnimationEaseInOut
 			anim.Start()
-			
+
 			time.AfterFunc(300*time.Millisecond, func() {
 				fyne.Do(func() { logContainer.Hide() })
 			})
@@ -3152,7 +3157,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 	})
 	bgAnim.Start()
 
-	animIn := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 300*time.Millisecond, func(p fyne.Position) {
+	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 300*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		layoutState.scale = 0.9 + (0.1 * v)
 		layoutState.offsetY = 25 * (1 - v)
@@ -3162,7 +3167,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 	animIn.Start()
 
 	animRunning := true
-	
+
 	// Auto-scroll detection
 	go func() {
 		for animRunning {
@@ -3170,7 +3175,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 			fyne.Do(func() {
 				if autoScroll && logScroll.Content != nil {
 					maxOffset := logScroll.Content.MinSize().Height - logScroll.Size().Height
-					if maxOffset > 0 && logScroll.Offset.Y < maxOffset - 30 {
+					if maxOffset > 0 && logScroll.Offset.Y < maxOffset-30 {
 						// User scrolled up manually!
 						autoScrollCheck.SetChecked(false)
 					}
@@ -3183,25 +3188,25 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 	pathStripRegex := regexp.MustCompile(`(?:[a-zA-Z]:[\\/]|/)[^\s]+[\\/]([^\s]+\.\w+)`)
 	// Regex for [XXX/YYY] compilation progress
 	progRegex := regexp.MustCompile(`\[(\d+)/(\d+)\]`)
-	
+
 	var uiUpdateQueued bool
 	var mu sync.Mutex
 
 	logFn := func(msg string, args ...any) {
 		line := fmt.Sprintf(msg, args...)
 		cleanLine := strings.TrimRight(line, "\r\n")
-		
+
 		// Strip absolute paths for cleaner logs
 		cleanLine = pathStripRegex.ReplaceAllString(cleanLine, "$1")
-		
+
 		mu.Lock()
 		logLines = append(logLines, cleanLine)
 		if len(logLines) > 500 {
 			logLines = logLines[len(logLines)-500:]
 		}
-		
+
 		match := progRegex.FindStringSubmatch(cleanLine)
-		
+
 		if !uiUpdateQueued {
 			uiUpdateQueued = true
 			go func() {
@@ -3219,8 +3224,8 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 			}()
 		}
 		mu.Unlock()
-		
-		// Progress UI updates are fine to do immediately as they are much lighter 
+
+		// Progress UI updates are fine to do immediately as they are much lighter
 		// than rebuilding a 500-line string, but we wrap in fyne.Do
 		fyne.Do(func() {
 			if isInfinite && !strings.Contains(cleanLine, "Adaptive Build") {
@@ -3238,7 +3243,7 @@ func (g *GUIApp) showProjectTaskModal(projectPath string, pName string, taskType
 				if tot > 0 {
 					progress.SetValue(cur / tot)
 				}
-				
+
 				// Strip the [XXX/YYY] prefix from the status label to make it cleaner
 				cleanStatus := strings.TrimSpace(progRegex.ReplaceAllString(cleanLine, ""))
 				statusLbl.SetText(fmt.Sprintf("Compiling (%.0f / %.0f): %s", cur, tot, cleanStatus))

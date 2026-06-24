@@ -59,28 +59,28 @@ func FindMinimumCoreVersion(pluginDir string) string {
 
 	// Regex to match: return 100;
 	re := regexp.MustCompile(`(?m)GetMinimumRequiredCoreVersion[^\{]*\{[^}]*return\s+(\d+)\s*;`)
-	
+
 	for _, file := range moduleFiles {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
 		}
-		
+
 		content := string(data)
 		matches := re.FindStringSubmatch(content)
 		if len(matches) > 1 {
 			// Found the integer, convert to semantic version
 			var versionInt int
 			fmt.Sscanf(matches[1], "%d", &versionInt)
-			
+
 			major := versionInt / 100
 			minor := (versionInt % 100) / 10
 			patch := versionInt % 10
-			
+
 			return fmt.Sprintf("%d.%d.%d", major, minor, patch)
 		}
 	}
-	
+
 	// Fallback to searching all C++ files if not found in Module files
 	reFallback := regexp.MustCompile(`(?m)GetMinimumRequiredCoreVersion\s*\(\)\s*(?:const)?\s*(?:override)?\s*\{\s*return\s+(\d+)\s*;\s*\}`)
 	var allFiles []string
@@ -93,26 +93,26 @@ func FindMinimumCoreVersion(pluginDir string) string {
 		}
 		return nil
 	})
-	
+
 	for _, file := range allFiles {
 		data, err := os.ReadFile(file)
 		if err != nil {
 			continue
 		}
-		
+
 		content := string(data)
 		matches := reFallback.FindStringSubmatch(content)
 		if len(matches) > 1 {
 			var versionInt int
 			fmt.Sscanf(matches[1], "%d", &versionInt)
-			
+
 			major := versionInt / 100
 			minor := (versionInt % 100) / 10
 			patch := versionInt % 10
-			
+
 			return fmt.Sprintf("%d.%d.%d", major, minor, patch)
 		}
 	}
-	
+
 	return ""
 }

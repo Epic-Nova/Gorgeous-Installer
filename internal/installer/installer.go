@@ -19,18 +19,18 @@ import (
 
 // Installer handles the installation of content or code packs
 type Installer struct {
-	PluginPath   string
-	PackType     string
-	PackVersion  *config.PackVersion
-	InstallPath  string
-	ProjectPath  string
-	EnginePath   string
-	PackContent  []byte
-	SourceDir    string
+	PluginPath    string
+	PackType      string
+	PackVersion   *config.PackVersion
+	InstallPath   string
+	ProjectPath   string
+	EnginePath    string
+	PackContent   []byte
+	SourceDir     string
 	RecompileOnly bool
-	Action       InstallAction
-	StatusLogger func(string, ...any)
-	RunContext   context.Context
+	Action        InstallAction
+	StatusLogger  func(string, ...any)
+	RunContext    context.Context
 }
 
 // NewInstaller creates a new installer instance
@@ -290,7 +290,6 @@ func (i *Installer) installHybridPack() error {
 	i.logf("Hybrid pack installed successfully")
 	return nil
 }
-
 
 // recompilePlugin attempts to recompile the plugin using UnrealBuildTool
 func (i *Installer) recompilePlugin() error {

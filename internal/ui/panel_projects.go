@@ -48,14 +48,14 @@ func (g *GUIApp) buildProjectsPanel(win fyne.Window, appendStatus func(string, .
 		installBtn.Importance = widget.HighImportance
 
 		installBtn.Icon = theme.DownloadIcon()
-		
+
 		infoBox := container.NewHBox(
 			widget.NewIcon(theme.InfoIcon()),
 			canvas.NewText("Install natively to enable double-clicking .uproject files.", gtTextPrimary),
 			layout.NewSpacer(),
 			installBtn,
 		)
-		
+
 		installBanner = container.NewPadded(newGTRoundedSurface(withAlpha(gtPrimary, 40), 12, container.NewPadded(infoBox)))
 	} else {
 		installBanner = container.NewVBox() // empty
@@ -97,7 +97,7 @@ func (g *GUIApp) buildProjectsPanel(win fyne.Window, appendStatus func(string, .
 	)
 
 	body := container.NewBorder(header, nil, nil, nil, scrollArea)
-	
+
 	// Initial load
 	refreshBtn.Tapped(&fyne.PointEvent{})
 
@@ -137,7 +137,7 @@ func scanForProjects(paths []string) []projectInfo {
 			if strings.HasSuffix(info.Name(), ".uproject") {
 				name := strings.TrimSuffix(info.Name(), ".uproject")
 				engineVer, _, _ := unreal.GetEngineVersionFromProject(path)
-				
+
 				dir := filepath.Dir(path)
 				hasBinaries := unreal.CheckProjectBinaries(path)
 
@@ -180,7 +180,7 @@ func buildProjectTile(g *GUIApp, win fyne.Window, p projectInfo, appendStatus fu
 		t := canvas.NewText(initials, gtTextSecondary)
 		t.TextSize = 48
 		t.TextStyle = fyne.TextStyle{Bold: true}
-		
+
 		spacer := canvas.NewRectangle(color.Transparent)
 		spacer.SetMinSize(fyne.NewSize(0, 40))
 		thumbContainer = container.NewStack(c, container.NewBorder(nil, spacer, nil, nil, container.NewCenter(t)))
@@ -239,8 +239,6 @@ func buildProjectTile(g *GUIApp, win fyne.Window, p projectInfo, appendStatus fu
 
 	return tile, tile
 }
-
-
 
 // tileWidget handles selection, hover, double click and right click
 type tileWidget struct {
@@ -320,10 +318,10 @@ func (t *tileWidget) MouseDown(ev *desktop.MouseEvent) {
 		center := ev.Position
 		wave.Resize(fyne.NewSize(10, 10))
 		wave.Move(fyne.NewPos(center.X-5, center.Y-5))
-		
+
 		t.overlay.Add(wave)
-		
-		anim := canvas.NewPositionAnimation(fyne.NewPos(0,0), fyne.NewPos(1,1), 600*time.Millisecond, func(p fyne.Position) {
+
+		anim := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 600*time.Millisecond, func(p fyne.Position) {
 			v := p.X
 			distX := center.X
 			if t.bg.Size().Width-center.X < distX {
@@ -345,12 +343,12 @@ func (t *tileWidget) MouseDown(ev *desktop.MouseEvent) {
 			size := float32(10) + (v * maxSize)
 			wave.Resize(fyne.NewSize(size, size))
 			wave.Move(fyne.NewPos(center.X-size/2, center.Y-size/2))
-			wave.FillColor = color.NRGBA{R: 255, G: 255, B: 255, A: uint8(200 * (1-v))}
+			wave.FillColor = color.NRGBA{R: 255, G: 255, B: 255, A: uint8(200 * (1 - v))}
 			wave.Refresh()
 		})
 		anim.Curve = fyne.AnimationEaseOut
 		anim.Start()
-		
+
 		time.AfterFunc(650*time.Millisecond, func() {
 			fyne.Do(func() {
 				t.overlay.Remove(wave)
@@ -403,7 +401,7 @@ func installNatively(appSettings *settings.AppSettings) error {
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		return err
 	}
-	
+
 	binName := "gorgeous-installer"
 	if runtime.GOOS == "windows" {
 		binName = "gorgeous-installer.exe"
@@ -418,7 +416,7 @@ func installNatively(appSettings *settings.AppSettings) error {
 		return err
 	}
 	defer src.Close()
-	
+
 	dst, err := os.OpenFile(destBin, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
 		return err

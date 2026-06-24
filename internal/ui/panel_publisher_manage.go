@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -10,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"strings"
 
 	"gorgeous-installer/internal/api"
 )
@@ -392,9 +392,9 @@ func (g *GUIApp) showEditDialog(sys api.SystemItem, win fyne.Window, refreshList
 	dialog.ShowForm("Edit System "+sys.SystemId, "Save", "Cancel", formItems, func(b bool) {
 		if b {
 			regData := api.SystemRegistrationData{
-				DisplayName:      displayNameEntry.Text,
-				Description:      descEntry.Text,
-				IsCoreSystem:     isCoreCheck.Checked,
+				DisplayName:        displayNameEntry.Text,
+				Description:        descEntry.Text,
+				IsCoreSystem:       isCoreCheck.Checked,
 				MinimumCoreVersion: minCoreEntry.Text,
 			}
 			if isPlugin {

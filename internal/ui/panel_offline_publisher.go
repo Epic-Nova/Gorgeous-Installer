@@ -344,7 +344,13 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		})
 	}
 
-	updateStatus("Generating config.json...")
+	updateStatus("Generating config.json with checksums...")
+	for i := range availVersions {
+		shaPath := filepath.Join(packsDir, availVersions[i].SHAFile)
+		if shaData, err := os.ReadFile(shaPath); err == nil {
+			availVersions[i].CheckSum = string(strings.TrimSpace(string(shaData)))
+		}
+	}
 	cfg := config.Config{
 		PackName:          manifestID,
 		PackType:          "hybrid",
@@ -394,29 +400,46 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		updateStatus("Packs and SHA files copied successfully.")
 	}
 
-	// Copy installer binaries to the temp dir for zipping
-	updateStatus("Preparing installer binaries for packaging...")
+	// Copy installer binaries to output directory
+	updateStatus("Copying installer binaries to output directory...")
 	linuxBinSrc := filepath.Join(tempDir, "build", "gorgeous-installer")
-	linuxBinDst := filepath.Join(tempDir, "gorgeous-installer")
+	linuxBinDst := filepath.Join(outDir, "gorgeous-installer")
 	if _, err := os.Stat(linuxBinSrc); err == nil {
 		copyFile(linuxBinSrc, linuxBinDst)
 		os.Chmod(linuxBinDst, 0755)
+		updateStatus("Linux binary copied!")
 	}
 	windowsBinSrc := filepath.Join(tempDir, "build", "gorgeous-installer.exe")
-	windowsBinDst := filepath.Join(tempDir, "gorgeous-installer.exe")
+	windowsBinDst := filepath.Join(outDir, "gorgeous-installer.exe")
 	if _, err := os.Stat(windowsBinSrc); err == nil {
 		copyFile(windowsBinSrc, windowsBinDst)
+		updateStatus("Windows binary copied!")
 	}
 
-	// Create final zip containing pack and installer binaries
-	updateStatus("Creating final offline installer package...")
-	finalZip := filepath.Join(outDir, fmt.Sprintf("%s-offline-installer.zip", manifestID))
-	cmdZipFinal := exec.Command("zip", "-r", finalZip, ".")
-	cmdZipFinal.Dir = tempDir
-	if err := cmdZipFinal.Run(); err != nil {
-		updateStatus("Failed to create final zip: %v", err)
-	} else {
-		updateStatus("Final offline installer package created: %s", finalZip)
+	// For Installer Update, create a final zip
+	if publishMode == "Installer Update" {
+		// Copy binaries to temp dir for zipping
+		if _, err := os.Stat(linuxBinSrc); err == nil {
+			copyFile(linuxBinSrc, linuxBinDst)
+			os.Chmod(linuxBinDst, 0755)
+		}
+		if _, err := os.Stat(windowsBinSrc); err == nil {
+			copyFile(windowsBinSrc, windowsBinDst)
+		}
+
+		// Copy packs to temp dir for zipping
+		cmdCpPacksTemp := exec.Command("cp", "-R", filepath.Join(packsDir, ".")+"/", tempDir+"/")
+		cmdCpPacksTemp.Run()
+
+		updateStatus("Creating final installer zip...")
+		finalZip := filepath.Join(outDir, fmt.Sprintf("%s-%s.zip", manifestID, sysVer))
+		cmdZipFinal := exec.Command("zip", "-r", finalZip, ".")
+		cmdZipFinal.Dir = tempDir
+		if err := cmdZipFinal.Run(); err != nil {
+			updateStatus("Failed to create final zip: %v", err)
+		} else {
+			updateStatus("Final installer zip created: %s", finalZip)
+		}
 	}
 
 	updateStatus("Offline publisher build completed! Files written to %s", outDir)
@@ -425,7 +448,11 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		if progress != nil {
 			progress.Hide()
 		}
-		dialog.ShowInformation("Offline Publish Complete", fmt.Sprintf("Standalone installer successfully built!\n\nExecutables and pack generated in:\n%s", outDir), win)
+		if publishMode == "Installer Update" {
+			dialog.ShowInformation("Offline Publish Complete", fmt.Sprintf("Standalone installer package built!\n\nOutput directory:\n%s", outDir), win)
+		} else {
+			dialog.ShowInformation("Offline Publish Complete", fmt.Sprintf("Pack and binaries generated!\n\nOutput directory:\n%s", outDir), win)
+		}
 	})
 }
 

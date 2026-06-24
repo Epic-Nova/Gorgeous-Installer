@@ -89,7 +89,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		container.NewHBox(changeBinBtn, layout.NewSpacer()),
 		container.NewHBox(newGTLabel("Installed Version:"), newGTValueLabel(buildinfo.Version)),
 	)
-		
+
 	if runtime.GOOS == "windows" {
 		assocCheck := widget.NewCheck("Associate .uproject files with Gorgeous Installer", func(b bool) {
 			appSettings.UprojectAssociated = b

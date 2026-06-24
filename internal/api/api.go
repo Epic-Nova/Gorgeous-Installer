@@ -15,10 +15,10 @@ import (
 )
 
 var (
-	BaseURL     = "https://api.gorgeous.simsalabim.studio/api/v1"
-	IsDevMode   = false
-	IsOffline   = false
-	httpClient  = &http.Client{Timeout: 10 * time.Second}
+	BaseURL    = "https://api.gorgeous.simsalabim.studio/api/v1"
+	IsDevMode  = false
+	IsOffline  = false
+	httpClient = &http.Client{Timeout: 10 * time.Second}
 )
 
 func init() {
@@ -133,14 +133,14 @@ type PublishRequest struct {
 	Changelog string `json:"changelog"`
 	Signature string `json:"signature"`
 	Checksum  string `json:"checksum"`
-	
-	TargetPluginName string `json:"target_plugin_name,omitempty"`
-	DisplayName      string `json:"display_name,omitempty"`
-	Description      string `json:"description,omitempty"`
-	IsCoreSystem     *bool   `json:"is_core_system,omitempty"`
-	MinimumCoreVersion string `json:"minimum_core_version,omitempty"`
-	SourcePaths      []string `json:"source_paths,omitempty"`
-	ContentPaths     []string `json:"content_paths,omitempty"`
+
+	TargetPluginName   string   `json:"target_plugin_name,omitempty"`
+	DisplayName        string   `json:"display_name,omitempty"`
+	Description        string   `json:"description,omitempty"`
+	IsCoreSystem       *bool    `json:"is_core_system,omitempty"`
+	MinimumCoreVersion string   `json:"minimum_core_version,omitempty"`
+	SourcePaths        []string `json:"source_paths,omitempty"`
+	ContentPaths       []string `json:"content_paths,omitempty"`
 }
 
 type PublishResponse struct {
@@ -195,13 +195,13 @@ func GetPublishChallenge(systemId string) (string, error) {
 }
 
 type SystemRegistrationData struct {
-	TargetPluginName string
-	DisplayName      string
-	Description      string
-	IsCoreSystem     bool
+	TargetPluginName   string
+	DisplayName        string
+	Description        string
+	IsCoreSystem       bool
 	MinimumCoreVersion string
-	SourcePaths      []string
-	ContentPaths     []string
+	SourcePaths        []string
+	ContentPaths       []string
 }
 
 func PublishSystem(systemId, version, changelog, signature, checksum, payloadPath, minimumCoreVersion string, regData *SystemRegistrationData, sourcePaths []string, contentPaths []string) error {
@@ -215,7 +215,7 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 		SourcePaths:        sourcePaths,
 		ContentPaths:       contentPaths,
 	}
-	
+
 	if regData != nil {
 		reqBody.TargetPluginName = regData.TargetPluginName
 		reqBody.DisplayName = regData.DisplayName
@@ -388,22 +388,22 @@ func GetAllSystems() ([]SystemItem, error) {
 
 func PatchSystem(systemId string, signature string, regData SystemRegistrationData) error {
 	reqBody := struct {
-		Signature           string   `json:"signature"`
-		TargetPluginName    string   `json:"target_plugin_name"`
-		DisplayName         string   `json:"display_name"`
-		Description         string   `json:"description"`
-		MinimumCoreVersion  string   `json:"minimum_core_version"`
-		SourcePaths         []string `json:"source_paths"`
-		ContentPaths        []string `json:"content_paths"`
-		IsCoreSystem        *bool    `json:"is_core_system,omitempty"`
+		Signature          string   `json:"signature"`
+		TargetPluginName   string   `json:"target_plugin_name"`
+		DisplayName        string   `json:"display_name"`
+		Description        string   `json:"description"`
+		MinimumCoreVersion string   `json:"minimum_core_version"`
+		SourcePaths        []string `json:"source_paths"`
+		ContentPaths       []string `json:"content_paths"`
+		IsCoreSystem       *bool    `json:"is_core_system,omitempty"`
 	}{
-		Signature:           signature,
-		TargetPluginName:    regData.TargetPluginName,
-		DisplayName:         regData.DisplayName,
-		Description:         regData.Description,
-		MinimumCoreVersion:  regData.MinimumCoreVersion,
-		SourcePaths:         regData.SourcePaths,
-		ContentPaths:        regData.ContentPaths,
+		Signature:          signature,
+		TargetPluginName:   regData.TargetPluginName,
+		DisplayName:        regData.DisplayName,
+		Description:        regData.Description,
+		MinimumCoreVersion: regData.MinimumCoreVersion,
+		SourcePaths:        regData.SourcePaths,
+		ContentPaths:       regData.ContentPaths,
 	}
 
 	isCore := regData.IsCoreSystem

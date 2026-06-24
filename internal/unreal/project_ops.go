@@ -70,7 +70,7 @@ func GenerateProjectFiles(ctx context.Context, uprojectPath string, logFn func(s
 	cmd := exec.CommandContext(ctx, generatorScript, "-project="+absPath, "-game")
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(absPath)
-	
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -119,7 +119,9 @@ func BuildProject(ctx context.Context, uprojectPath string, logFn func(string, .
 	dotNetDir := filepath.Join(enginePath, "Engine", "Binaries", "ThirdParty", "DotNet")
 	var bundledDotnet string
 	_ = filepath.Walk(dotNetDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil { return nil }
+		if err != nil {
+			return nil
+		}
 		if !info.IsDir() {
 			name := strings.ToLower(info.Name())
 			if name == "dotnet" || name == "dotnet.exe" {
@@ -129,7 +131,7 @@ func BuildProject(ctx context.Context, uprojectPath string, logFn func(string, .
 		}
 		return nil
 	})
-	
+
 	dotnetExe := "dotnet"
 	if bundledDotnet != "" {
 		dotnetExe = bundledDotnet
@@ -143,7 +145,7 @@ func BuildProject(ctx context.Context, uprojectPath string, logFn func(string, .
 	cmd := exec.CommandContext(ctx, dotnetExe, ubtDll, projectName+"Editor", platform, "Development", "-Project="+absPath, "-buildscw")
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(absPath)
-	
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

@@ -347,7 +347,7 @@ func CheckProjectBinaries(projectPath string) bool {
 	_, enginePath, err := GetEngineVersionFromProject(projectPath)
 	if err != nil || enginePath == "" {
 		// Can't resolve engine path, safer to trigger compile to let UBT figure it out
-		return false 
+		return false
 	}
 
 	engineModulesPath := filepath.Join(enginePath, "Engine", "Binaries", platform, "UnrealEditor.modules")

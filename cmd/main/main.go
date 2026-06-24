@@ -15,13 +15,13 @@ import (
 )
 
 type cliOptions struct {
-	ProjectPath    string
-	PackType       string
-	PackVersion    string
-	EngineVersion  string
-	InstallAction  string
-	ValidateSHA    bool
-	ManifestSHA    string
+	ProjectPath         string
+	PackType            string
+	PackVersion         string
+	EngineVersion       string
+	InstallAction       string
+	ValidateSHA         bool
+	ManifestSHA         string
 	SourceDir           string
 	InstallZip          string
 	RecompileOnly       bool
@@ -65,14 +65,14 @@ func main() {
 	}
 
 	opts := cliOptions{
-		ProjectPath:    strings.TrimSpace(*projectPath),
-		PackType:       strings.TrimSpace(*packType),
-		PackVersion:    strings.TrimSpace(*packVersion),
-		EngineVersion:  strings.TrimSpace(*engineVersion),
-		InstallAction:  strings.TrimSpace(*installAction),
-		ValidateSHA:    *validateSHA,
-		ManifestSHA:    strings.TrimSpace(*shaFile),
-		SourceDir:      strings.TrimSpace(*sourceDir),
+		ProjectPath:         strings.TrimSpace(*projectPath),
+		PackType:            strings.TrimSpace(*packType),
+		PackVersion:         strings.TrimSpace(*packVersion),
+		EngineVersion:       strings.TrimSpace(*engineVersion),
+		InstallAction:       strings.TrimSpace(*installAction),
+		ValidateSHA:         *validateSHA,
+		ManifestSHA:         strings.TrimSpace(*shaFile),
+		SourceDir:           strings.TrimSpace(*sourceDir),
 		InstallZip:          strings.TrimSpace(*installZip),
 		RecompileOnly:       *recompileOnly,
 		WaitForPID:          *waitForPID,
@@ -118,9 +118,9 @@ func main() {
 	}
 
 	// Double-click or open-with behavior: if the only arg is a .uproject file
-	if opts.ProjectPath != "" && strings.HasSuffix(strings.ToLower(opts.ProjectPath), ".uproject") && 
+	if opts.ProjectPath != "" && strings.HasSuffix(strings.ToLower(opts.ProjectPath), ".uproject") &&
 		opts.PackType == "" && opts.InstallAction == "" && !opts.RecompileOnly && !opts.VerifyCompatibility {
-		
+
 		if unreal.CheckProjectBinaries(opts.ProjectPath) {
 			// Binaries exist, launch project and exit silently
 			if err := unreal.OpenProject(opts.ProjectPath); err != nil {
@@ -129,7 +129,7 @@ func main() {
 			}
 			os.Exit(0)
 		}
-		
+
 		// Binaries missing: Boot GUI and instantly show Auto-Build modal
 		opts.AutoBuildProject = true
 		runGUIMode(cfg, opts)
