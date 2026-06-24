@@ -17,8 +17,9 @@ import (
 )
 
 type versionEntry struct {
-	ueVer      string
-	sourcePath string
+	ueVer             string
+	supportedVersions []string
+	sourcePath        string
 }
 
 func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string, manifest *SystemManifest, versions []versionEntry, installerPath string, sysVer string, appendStatus func(string, ...any)) {
@@ -312,9 +313,10 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		}
 
 		availVersions = append(availVersions, config.PackVersion{
-			Version: v.ueVer,
-			Path:    fmt.Sprintf("packs/%s", packName),
-			SHAFile: fmt.Sprintf("packs/%s.sha256", packName),
+			Version:            v.ueVer,
+			Path:               fmt.Sprintf("packs/%s", packName),
+			SHAFile:            fmt.Sprintf("packs/%s.sha256", packName),
+			SupportedVersions:  v.supportedVersions,
 		})
 	}
 

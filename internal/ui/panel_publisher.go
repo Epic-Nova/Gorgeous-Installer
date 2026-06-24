@@ -30,6 +30,51 @@ import (
 	"gorgeous-installer/internal/config"
 )
 
+func isUniversal(s string) bool {
+	return strings.EqualFold(strings.TrimSpace(s), "Universal")
+}
+
+// promptUniversalSupportedVersions shows a modal with checkboxes for UE 5.0..5.8
+// when the user has entered "Universal" as a version mapping.
+// Returns nil if the user cancels or makes no selection.
+func promptUniversalSupportedVersions(win fyne.Window, onDone func([]string)) {
+	allVersions := []string{"5.0", "5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7", "5.8"}
+	checks := make([]*widget.Check, len(allVersions))
+	for i, v := range allVersions {
+		checks[i] = widget.NewCheck(v, nil)
+		checks[i].SetChecked(true)
+	}
+
+	checksBox := container.NewVBox()
+	for _, chk := range checks {
+		checksBox.Add(chk)
+	}
+
+	content := container.NewVBox(
+		widget.NewLabel("Universal build — select which engine versions it applies to:"),
+		widget.NewSeparator(),
+		checksBox,
+	)
+
+	dialog.ShowCustomConfirm("Universal Supported Versions", "Confirm", "Cancel", content, func(ok bool) {
+		if !ok {
+			onDone(nil)
+			return
+		}
+		var selected []string
+		for i, chk := range checks {
+			if chk.Checked {
+				selected = append(selected, allVersions[i])
+			}
+		}
+		if len(selected) == 0 {
+			onDone(nil)
+			return
+		}
+		onDone(selected)
+	}, win)
+}
+
 // SystemManifest represents the JSON manifest required for GT ecosystem packs.
 type SystemManifest struct {
 	ID           string   `json:"SystemId"`
@@ -194,8 +239,29 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			}
 		}
 
+		pluginUeVer := pluginUeVerEntry.Text
+
+		if isUniversal(pluginUeVer) {
+			promptUniversalSupportedVersions(win, func(supported []string) {
+				if supported == nil {
+					return
+				}
+				versions = append(versions, versionEntry{
+					ueVer:             pluginUeVer,
+					supportedVersions: supported,
+					sourcePath:        pluginPathEntry.Text,
+				})
+				pluginUeVerEntry.SetText("")
+				pluginPathEntry.SetText("")
+				if updateList != nil {
+					updateList()
+				}
+			})
+			return
+		}
+
 		versions = append(versions, versionEntry{
-			ueVer:      pluginUeVerEntry.Text,
+			ueVer:      pluginUeVer,
 			sourcePath: pluginPathEntry.Text,
 		})
 		pluginUeVerEntry.SetText("")
@@ -255,8 +321,27 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			}
 		}
 
+		ueVer := ueVerEntry.Text
+
+		if isUniversal(ueVer) {
+			promptUniversalSupportedVersions(win, func(supported []string) {
+				if supported == nil {
+					return
+				}
+				versions = append(versions, versionEntry{
+					ueVer:             ueVer,
+					supportedVersions: supported,
+					sourcePath:        pathEntry.Text,
+				})
+				ueVerEntry.SetText("")
+				pathEntry.SetText("")
+				updateList()
+			})
+			return
+		}
+
 		versions = append(versions, versionEntry{
-			ueVer:      ueVerEntry.Text,
+			ueVer:      ueVer,
 			sourcePath: pathEntry.Text,
 		})
 		ueVerEntry.SetText("")
@@ -572,12 +657,13 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						}
 					}
 
-					availVersions = append(availVersions, config.PackVersion{
-						Version: v.ueVer,
-						Path:    fmt.Sprintf("packs/%s", packName),
-						SHAFile: fmt.Sprintf("packs/%s.sha256", packName),
-					})
-				}
+				availVersions = append(availVersions, config.PackVersion{
+					Version:            v.ueVer,
+					Path:               fmt.Sprintf("packs/%s", packName),
+					SHAFile:            fmt.Sprintf("packs/%s.sha256", packName),
+					SupportedVersions:  v.supportedVersions,
+				})
+			}
 
 			cfg := config.Config{
 				PackName:          loadedManifest.ID,

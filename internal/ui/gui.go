@@ -711,12 +711,31 @@ func (g *GUIApp) Run() {
 		appendStatus("Detected engine version from EngineAssociation: %s", engineVersion)
 		appendStatus("Resolved engine path: %s", enginePath)
 
-		if best := chooseClosestVersion(engineVersion, versions); best != "" {
-			autoPackVersion = best
+		best := chooseClosestVersion(engineVersion, versions)
+		if best != "" {
+			bestMajor, bestMinor := parseVersion(best)
+			engineMajor, engineMinor := parseVersion(engineVersion)
+			isConcrete := !(bestMajor > engineMajor || (bestMajor == engineMajor && bestMinor > engineMinor))
+			if isConcrete {
+				autoPackVersion = best
+				manualVersionSel = false
+				versionSelect.SetSelected(best)
+				versionSelectRow.Hide()
+				appendStatus("Selected pack version from project: %s", best)
+				if refreshPlanState != nil {
+					refreshPlanState()
+				}
+				return
+			}
+		}
+
+		if isVersionInSupportedList(engineVersion, supportedVersionsForVersion("Universal", g.config.AvailableVersions)) {
+			univVer := "Universal"
+			autoPackVersion = univVer
 			manualVersionSel = false
-			versionSelect.SetSelected(best)
+			versionSelect.SetSelected(univVer)
 			versionSelectRow.Hide()
-			appendStatus("Selected pack version from project: %s", best)
+			appendStatus("Selected Universal build: covers UE %s", engineVersion)
 			if refreshPlanState != nil {
 				refreshPlanState()
 			}
@@ -2271,13 +2290,6 @@ func chooseClosestVersion(engineVersion string, versions []string) string {
 			return v
 		}
 	}
-	
-	// If "Universal" is an available version, use it and skip engine matching
-	for _, v := range versions {
-		if strings.EqualFold(v, "universal") {
-			return v
-		}
-	}
 
 	engineMajor, engineMinor := parseVersion(normalized)
 	var best string
@@ -2294,6 +2306,34 @@ func chooseClosestVersion(engineVersion string, versions []string) string {
 		}
 	}
 	return best
+}
+
+func supportedVersionsForVersion(ver string, availVersions []config.PackVersion) []string {
+	if !strings.EqualFold(ver, "Universal") {
+		return nil
+	}
+	for _, pv := range availVersions {
+		if strings.EqualFold(pv.Version, "Universal") {
+			return pv.SupportedVersions
+		}
+	}
+	return nil
+}
+
+func isVersionInSupportedList(engineVer string, supported []string) bool {
+	if len(supported) == 0 {
+		return true
+	}
+	normEngine, err := unreal.NormalizeVersion(engineVer)
+	if err != nil {
+		normEngine = engineVer
+	}
+	for _, sv := range supported {
+		if sv == normEngine {
+			return true
+		}
+	}
+	return false
 }
 
 func compareVersionStrings(a, b string) int {

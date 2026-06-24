@@ -19,10 +19,11 @@ type Config struct {
 
 // PackVersion represents a specific pack version for a UE version
 type PackVersion struct {
-	Version  string `json:"version"`
-	Path     string `json:"path"`
-	SHAFile  string `json:"shaFile,omitempty"`
-	CheckSum string `json:"checksum"`
+	Version         string   `json:"version"`
+	Path            string   `json:"path"`
+	SHAFile         string   `json:"shaFile,omitempty"`
+	CheckSum        string   `json:"checksum"`
+	SupportedVersions []string `json:"supportedVersions,omitempty"`
 }
 
 // LoadConfig loads configuration from embedded config.json.
