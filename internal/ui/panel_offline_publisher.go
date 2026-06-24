@@ -369,7 +369,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		updateStatus("Build failed: %v\n%s", err, string(out))
 	} else {
 		// Copy Linux binary
-		outBin := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s", manifestID))
+		outBin := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s", manifestID))
 		srcBin := filepath.Join(tempDir, "build", "gorgeous-installer")
 		if err := copyFile(srcBin, outBin); err != nil {
 			updateStatus("Failed to copy Linux binary: %v", err)
@@ -379,7 +379,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		}
 
 		// Copy Windows binary (if cross-compilation succeeded)
-		outExe := filepath.Join(outDir, fmt.Sprintf("gorgeous-installer-%s.exe", manifestID))
+		outExe := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s.exe", manifestID))
 		srcExe := filepath.Join(tempDir, "build", "gorgeous-installer.exe")
 		if _, err := os.Stat(srcExe); err == nil {
 			if err := copyFile(srcExe, outExe); err != nil {
@@ -403,14 +403,14 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	// Copy installer binaries to output directory
 	updateStatus("Copying installer binaries to output directory...")
 	linuxBinSrc := filepath.Join(tempDir, "build", "gorgeous-installer")
-	linuxBinDst := filepath.Join(outDir, "gorgeous-installer")
+	linuxBinDst := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s", manifestID))
 	if _, err := os.Stat(linuxBinSrc); err == nil {
 		copyFile(linuxBinSrc, linuxBinDst)
 		os.Chmod(linuxBinDst, 0755)
 		updateStatus("Linux binary copied!")
 	}
 	windowsBinSrc := filepath.Join(tempDir, "build", "gorgeous-installer.exe")
-	windowsBinDst := filepath.Join(outDir, "gorgeous-installer.exe")
+	windowsBinDst := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s.exe", manifestID))
 	if _, err := os.Stat(windowsBinSrc); err == nil {
 		copyFile(windowsBinSrc, windowsBinDst)
 		updateStatus("Windows binary copied!")
@@ -419,12 +419,14 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	// For Installer Update, create a final zip
 	if publishMode == "Installer Update" {
 		// Copy binaries to temp dir for zipping
+		linuxBinTemp := filepath.Join(tempDir, "Gorgeous-Installer-"+manifestID)
+		windowsBinTemp := filepath.Join(tempDir, "Gorgeous-Installer-"+manifestID+".exe")
 		if _, err := os.Stat(linuxBinSrc); err == nil {
-			copyFile(linuxBinSrc, linuxBinDst)
-			os.Chmod(linuxBinDst, 0755)
+			copyFile(linuxBinSrc, linuxBinTemp)
+			os.Chmod(linuxBinTemp, 0755)
 		}
 		if _, err := os.Stat(windowsBinSrc); err == nil {
-			copyFile(windowsBinSrc, windowsBinDst)
+			copyFile(windowsBinSrc, windowsBinTemp)
 		}
 
 		// Copy packs to temp dir for zipping
@@ -432,7 +434,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		cmdCpPacksTemp.Run()
 
 		updateStatus("Creating final installer zip...")
-		finalZip := filepath.Join(outDir, fmt.Sprintf("%s-%s.zip", manifestID, sysVer))
+		finalZip := filepath.Join(outDir, fmt.Sprintf("%s.zip", manifestID))
 		cmdZipFinal := exec.Command("zip", "-r", finalZip, ".")
 		cmdZipFinal.Dir = tempDir
 		if err := cmdZipFinal.Run(); err != nil {
