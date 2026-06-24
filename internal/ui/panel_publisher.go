@@ -26,54 +26,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"gorgeous-installer/internal/api"
-	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/config"
+	"gorgeous-installer/internal/settings"
 )
-
-func isUniversal(s string) bool {
-	return strings.EqualFold(strings.TrimSpace(s), "Universal")
-}
-
-// promptUniversalSupportedVersions shows a modal with checkboxes for UE 5.0..5.8
-// when the user has entered "Universal" as a version mapping.
-// Returns nil if the user cancels or makes no selection.
-func promptUniversalSupportedVersions(win fyne.Window, onDone func([]string)) {
-	allVersions := []string{"5.0", "5.1", "5.2", "5.3", "5.4", "5.5", "5.6", "5.7", "5.8"}
-	checks := make([]*widget.Check, len(allVersions))
-	for i, v := range allVersions {
-		checks[i] = widget.NewCheck(v, nil)
-		checks[i].SetChecked(true)
-	}
-
-	checksBox := container.NewVBox()
-	for _, chk := range checks {
-		checksBox.Add(chk)
-	}
-
-	content := container.NewVBox(
-		widget.NewLabel("Universal build — select which engine versions it applies to:"),
-		widget.NewSeparator(),
-		checksBox,
-	)
-
-	dialog.ShowCustomConfirm("Universal Supported Versions", "Confirm", "Cancel", content, func(ok bool) {
-		if !ok {
-			onDone(nil)
-			return
-		}
-		var selected []string
-		for i, chk := range checks {
-			if chk.Checked {
-				selected = append(selected, allVersions[i])
-			}
-		}
-		if len(selected) == 0 {
-			onDone(nil)
-			return
-		}
-		onDone(selected)
-	}, win)
-}
 
 // SystemManifest represents the JSON manifest required for GT ecosystem packs.
 type SystemManifest struct {
@@ -105,12 +60,12 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 	var publishBtn, offlinePublishBtn *accentButton
 	installerType := "Source"
-	
+
 	// History List (Mock for now, will connect to API)
 	historyList := container.NewVBox(
 		newGTLabel("Fetching release history..."),
 	)
-	
+
 	refreshHistory := func(id string) {
 		historyList.Objects = []fyne.CanvasObject{
 			newGTLabel("History for " + id + ":"),
@@ -172,7 +127,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		packEntriesBox.Refresh()
 		pluginEntriesBox.Refresh()
 	}
-	
+
 	ueVerEntry := widget.NewEntry()
 	ueVerEntry.SetPlaceHolder("e.g. 5.4")
 
@@ -190,8 +145,6 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 	pluginPathEntry := widget.NewEntry()
 	pluginPathEntry.SetPlaceHolder("Path to Plugin Folder...")
-
-
 
 	pluginPathBrowseBtn := widget.NewButton("Browse", func() {
 		dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
@@ -239,29 +192,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			}
 		}
 
-		pluginUeVer := pluginUeVerEntry.Text
-
-		if isUniversal(pluginUeVer) {
-			promptUniversalSupportedVersions(win, func(supported []string) {
-				if supported == nil {
-					return
-				}
-				versions = append(versions, versionEntry{
-					ueVer:             pluginUeVer,
-					supportedVersions: supported,
-					sourcePath:        pluginPathEntry.Text,
-				})
-				pluginUeVerEntry.SetText("")
-				pluginPathEntry.SetText("")
-				if updateList != nil {
-					updateList()
-				}
-			})
-			return
-		}
-
 		versions = append(versions, versionEntry{
-			ueVer:      pluginUeVer,
+			ueVer:      pluginUeVerEntry.Text,
 			sourcePath: pluginPathEntry.Text,
 		})
 		pluginUeVerEntry.SetText("")
@@ -321,27 +253,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			}
 		}
 
-		ueVer := ueVerEntry.Text
-
-		if isUniversal(ueVer) {
-			promptUniversalSupportedVersions(win, func(supported []string) {
-				if supported == nil {
-					return
-				}
-				versions = append(versions, versionEntry{
-					ueVer:             ueVer,
-					supportedVersions: supported,
-					sourcePath:        pathEntry.Text,
-				})
-				ueVerEntry.SetText("")
-				pathEntry.SetText("")
-				updateList()
-			})
-			return
-		}
-
 		versions = append(versions, versionEntry{
-			ueVer:      ueVer,
+			ueVer:      ueVerEntry.Text,
 			sourcePath: pathEntry.Text,
 		})
 		ueVerEntry.SetText("")
@@ -415,7 +328,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				// 1. Fetch Challenge
 				updateStatus("1. Fetching cryptographic challenge from API...")
 				challenge, err := api.GetPublishChallenge(sysID)
-				
+
 				var regData *api.SystemRegistrationData
 				if err != nil {
 					if err == api.ErrSystemNotFound {
@@ -425,36 +338,36 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 								progress.Hide()
 							}
 							targetPluginEntry := widget.NewEntry()
-						targetPluginEntry.SetText(sysID)
-						displayNameEntry := widget.NewEntry()
-						displayNameEntry.SetText(sysName)
-						descEntry := widget.NewMultiLineEntry()
-						descEntry.SetText(sysDesc)
-						isCoreCheck := widget.NewCheck("Is Core System?", nil)
-						
-						formItems := []*widget.FormItem{
-							widget.NewFormItem("Target Plugin", targetPluginEntry),
-							widget.NewFormItem("Display Name", displayNameEntry),
-							widget.NewFormItem("Description", descEntry),
-						}
-						if publishMode == "Pack Update" {
-							formItems = append(formItems, widget.NewFormItem("", isCoreCheck))
-						}
-						
-						dialog.ShowForm("System Not Found - Register as new Pack?", "Register", "Cancel", formItems, func(b bool) {
-							if b {
-								regChan <- &api.SystemRegistrationData{
-									TargetPluginName: targetPluginEntry.Text,
-									DisplayName:      displayNameEntry.Text,
-									Description:      descEntry.Text,
-									IsCoreSystem:     publishMode == "Pack Update" && isCoreCheck.Checked,
-								}
-							} else {
-								regChan <- nil
+							targetPluginEntry.SetText(sysID)
+							displayNameEntry := widget.NewEntry()
+							displayNameEntry.SetText(sysName)
+							descEntry := widget.NewMultiLineEntry()
+							descEntry.SetText(sysDesc)
+							isCoreCheck := widget.NewCheck("Is Core System?", nil)
+
+							formItems := []*widget.FormItem{
+								widget.NewFormItem("Target Plugin", targetPluginEntry),
+								widget.NewFormItem("Display Name", displayNameEntry),
+								widget.NewFormItem("Description", descEntry),
 							}
-						}, win)
+							if publishMode == "Pack Update" {
+								formItems = append(formItems, widget.NewFormItem("", isCoreCheck))
+							}
+
+							dialog.ShowForm("System Not Found - Register as new Pack?", "Register", "Cancel", formItems, func(b bool) {
+								if b {
+									regChan <- &api.SystemRegistrationData{
+										TargetPluginName: targetPluginEntry.Text,
+										DisplayName:      displayNameEntry.Text,
+										Description:      descEntry.Text,
+										IsCoreSystem:     publishMode == "Pack Update" && isCoreCheck.Checked,
+									}
+								} else {
+									regChan <- nil
+								}
+							}, win)
 						})
-						
+
 						regData = <-regChan
 						if regData == nil {
 							fyne.Do(func() {
@@ -464,7 +377,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 							})
 							return
 						}
-						
+
 						fyne.Do(func() {
 							if progress != nil {
 								progress.Show()
@@ -483,7 +396,11 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						return
 					}
 				}
-				fyne.Do(func() { if progBar != nil { progBar.SetValue(1) } })
+				fyne.Do(func() {
+					if progBar != nil {
+						progBar.SetValue(1)
+					}
+				})
 
 				// 2. Build hybrid pack and zip
 				updateStatus("2. Building hybrid packs and zipping...")
@@ -516,7 +433,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					if srcDir == "" {
 						srcDir = "."
 					}
-					
+
 					var cmdZip *exec.Cmd
 					if !isInstallerBinary {
 						cmdZip = exec.Command("zip", "-r", zipPath, ".", "-x", "build/*", "build", "*.exe", "*.syso", ".git/*", ".git", "*.log", "*.gti")
@@ -559,333 +476,373 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						})
 						return
 					}
-					
+
 					// Compute hash of the zip payload for the checksum
 					if zipBytes, err := os.ReadFile(zipPath); err == nil {
 						h := sha256.Sum256(zipBytes)
 						payloadChecksum = hex.EncodeToString(h[:])
 					}
 				} else {
-				// PLUGIN OR PACK UPDATE MODE
-				var availVersions []config.PackVersion
-				
-				// Determine actualPluginName from first version's sourcePath
-				firstPluginRoot := versions[0].sourcePath
-				for firstPluginRoot != "" && firstPluginRoot != string(filepath.Separator) && firstPluginRoot != "." {
-					matches, _ := filepath.Glob(filepath.Join(firstPluginRoot, "*.uplugin"))
-					if len(matches) > 0 {
-						break
-					}
-					parent := filepath.Dir(firstPluginRoot)
-					if parent == firstPluginRoot {
-						firstPluginRoot = versions[0].sourcePath
-						break
-					}
-					firstPluginRoot = parent
-				}
-				actualPluginName := filepath.Base(firstPluginRoot)
+					// PLUGIN OR PACK UPDATE MODE
+					var availVersions []config.PackVersion
 
-				for _, v := range versions {
-					packName := fmt.Sprintf("%s-%s", loadedManifest.ID, v.ueVer)
-					packPath := filepath.Join(packsDir, packName)
-					os.MkdirAll(packPath, 0755)
-
-					vPluginRoot := v.sourcePath
-					for vPluginRoot != "" && vPluginRoot != string(filepath.Separator) && vPluginRoot != "." {
-						matches, _ := filepath.Glob(filepath.Join(vPluginRoot, "*.uplugin"))
+					// Determine actualPluginName from first version's sourcePath
+					firstPluginRoot := versions[0].sourcePath
+					for firstPluginRoot != "" && firstPluginRoot != string(filepath.Separator) && firstPluginRoot != "." {
+						matches, _ := filepath.Glob(filepath.Join(firstPluginRoot, "*.uplugin"))
 						if len(matches) > 0 {
 							break
 						}
-						parent := filepath.Dir(vPluginRoot)
-						if parent == vPluginRoot {
-							vPluginRoot = v.sourcePath
+						parent := filepath.Dir(firstPluginRoot)
+						if parent == firstPluginRoot {
+							firstPluginRoot = versions[0].sourcePath
 							break
 						}
-						vPluginRoot = parent
+						firstPluginRoot = parent
 					}
+					actualPluginName := filepath.Base(firstPluginRoot)
 
-					var exclusions []string
+					for _, v := range versions {
+						packName := fmt.Sprintf("%s-%s", loadedManifest.ID, v.ueVer)
+						packPath := filepath.Join(packsDir, packName)
+						os.MkdirAll(packPath, 0755)
 
-					if publishMode == "Plugin Update" {
-						// Exclude all systems where !IsCoreSystem
-						filepath.Walk(vPluginRoot, func(p string, info os.FileInfo, err error) error {
-							if err != nil { return nil }
-							if info.IsDir() {
-								base := info.Name()
-								if base == ".git" || base == "Binaries" || base == "Intermediate" || base == "Saved" || base == "DerivedDataCache" || base == ".vs" {
-									return filepath.SkipDir
-								}
+						vPluginRoot := v.sourcePath
+						for vPluginRoot != "" && vPluginRoot != string(filepath.Separator) && vPluginRoot != "." {
+							matches, _ := filepath.Glob(filepath.Join(vPluginRoot, "*.uplugin"))
+							if len(matches) > 0 {
+								break
 							}
-							if !info.IsDir() && info.Name() == "SystemManifest.json" {
-								if b, err := os.ReadFile(p); err == nil {
-									var m SystemManifest
-									if json.Unmarshal(b, &m) == nil {
-										if !m.IsCoreSystem {
-											exclusions = append(exclusions, m.PayloadPaths...)
+							parent := filepath.Dir(vPluginRoot)
+							if parent == vPluginRoot {
+								vPluginRoot = v.sourcePath
+								break
+							}
+							vPluginRoot = parent
+						}
+
+						var exclusions []string
+
+						if publishMode == "Plugin Update" {
+							// Exclude all systems where !IsCoreSystem
+							filepath.Walk(vPluginRoot, func(p string, info os.FileInfo, err error) error {
+								if err != nil {
+									return nil
+								}
+								if info.IsDir() {
+									base := info.Name()
+									if base == ".git" || base == "Binaries" || base == "Intermediate" || base == "Saved" || base == "DerivedDataCache" || base == ".vs" {
+										return filepath.SkipDir
+									}
+								}
+								if !info.IsDir() && info.Name() == "SystemManifest.json" {
+									if b, err := os.ReadFile(p); err == nil {
+										var m SystemManifest
+										if json.Unmarshal(b, &m) == nil {
+											if !m.IsCoreSystem {
+												exclusions = append(exclusions, m.PayloadPaths...)
+											}
 										}
 									}
 								}
-							}
-							return nil
-						})
+								return nil
+							})
 
-						// For Plugin update, copy the whole vPluginRoot
-						copyDirFiltered(vPluginRoot, packPath, exclusions)
+							// For Plugin update, copy the whole vPluginRoot
+							copyDirFiltered(vPluginRoot, packPath, exclusions)
 
-					} else {
-						// Pack Update Mode
-						var pathsToCopy []string
-						if len(loadedManifest.PayloadPaths) > 0 {
-							pathsToCopy = loadedManifest.PayloadPaths
 						} else {
-							pathsToCopy = []string{"."}
-						}
+							// Pack Update Mode
+							// Pack updates should include non-core systems only (core systems go in plugin updates)
+							var pathsToCopy []string
+							if len(loadedManifest.PayloadPaths) > 0 {
+								pathsToCopy = loadedManifest.PayloadPaths
+							} else {
+								pathsToCopy = []string{"."}
+							}
 
-						for _, relPath := range pathsToCopy {
-							src := filepath.Join(vPluginRoot, relPath)
-							dst := filepath.Join(packPath, relPath)
-							
-							if info, err := os.Stat(src); err == nil {
+							var exclusions []string
+
+							// Exclude core systems from pack updates (they should be in plugin updates)
+							filepath.Walk(vPluginRoot, func(p string, info os.FileInfo, err error) error {
+								if err != nil {
+									return nil
+								}
 								if info.IsDir() {
-									os.MkdirAll(dst, 0755)
-									copyDirFiltered(src, dst, exclusions)
-								} else {
-									os.MkdirAll(filepath.Dir(dst), 0755)
-									copyFile(src, dst)
+									base := info.Name()
+									if base == ".git" || base == "Binaries" || base == "Intermediate" || base == "Saved" || base == "DerivedDataCache" || base == ".vs" {
+										return filepath.SkipDir
+									}
+								}
+								if !info.IsDir() && info.Name() == "SystemManifest.json" {
+									if b, err := os.ReadFile(p); err == nil {
+										var m SystemManifest
+										if json.Unmarshal(b, &m) == nil {
+											if m.IsCoreSystem {
+												exclusions = append(exclusions, m.PayloadPaths...)
+											}
+										}
+									}
+								}
+								return nil
+							})
+
+							for _, relPath := range pathsToCopy {
+								src := filepath.Join(vPluginRoot, relPath)
+								dst := filepath.Join(packPath, relPath)
+
+								if info, err := os.Stat(src); err == nil {
+									if info.IsDir() {
+										os.MkdirAll(dst, 0755)
+										copyDirFiltered(src, dst, exclusions)
+									} else {
+										os.MkdirAll(filepath.Dir(dst), 0755)
+										copyFile(src, dst)
+									}
 								}
 							}
 						}
+
+						availVersions = append(availVersions, config.PackVersion{
+							Version: v.ueVer,
+							Path:    fmt.Sprintf("packs/%s", packName),
+							SHAFile: fmt.Sprintf("packs/%s.sha256", packName),
+						})
 					}
 
-				availVersions = append(availVersions, config.PackVersion{
-					Version:            v.ueVer,
-					Path:               fmt.Sprintf("packs/%s", packName),
-					SHAFile:            fmt.Sprintf("packs/%s.sha256", packName),
-					SupportedVersions:  v.supportedVersions,
-				})
-			}
+					cfg := config.Config{
+						PackName:          loadedManifest.ID,
+						PackType:          "hybrid",
+						PluginName:        actualPluginName,
+						AvailableVersions: availVersions,
+					}
+					cfgData, _ := json.MarshalIndent(cfg, "", "  ")
+					os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
 
-			cfg := config.Config{
-				PackName:          loadedManifest.ID,
-				PackType:          "hybrid",
-				PluginName:        actualPluginName,
-				AvailableVersions: availVersions,
-			}
-			cfgData, _ := json.MarshalIndent(cfg, "", "  ")
-			os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
-
-			cmdZip := exec.Command("zip", "-r", zipPath, ".")
-			cmdZip.Dir = tempDir
-			if err := cmdZip.Run(); err != nil {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
+					cmdZip := exec.Command("zip", "-r", zipPath, ".")
+					cmdZip.Dir = tempDir
+					if err := cmdZip.Run(); err != nil {
+						fyne.Do(func() {
+							if progress != nil {
+								progress.Hide()
+							}
+							appendStatus("Zip failed: %v", err)
+							publishBtn.SetRunning(false)
+							publishBtn.SetEnabled(true)
+						})
+						return
 					}
-					appendStatus("Zip failed: %v", err)
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-			fyne.Do(func() { if progBar != nil { progBar.SetValue(2) } })
-		}
-			
-		// Prompt for PIN in Fyne GUI
-			pinChan := make(chan string)
-			fyne.Do(func() {
-				entry := widget.NewPasswordEntry()
-				dialog.ShowCustomConfirm("YubiKey PIN Required", "Sign", "Cancel", entry, func(b bool) {
-					if b {
-						pinChan <- entry.Text
-					} else {
-						pinChan <- ""
-					}
-				}, win)
-			})
-			
-			pin := <-pinChan
-			if pin == "" {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("Publish cancelled (no PIN provided).")
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-
-			// 3. Sign using Native PIV Applet
-			updateStatus("3. Signing challenge with YubiKey (PIV)...")
-			
-			cards, err := piv.Cards()
-			if err != nil || len(cards) == 0 {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("PIV Error: No smart cards found (%v)", err)
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-			
-			var yk *piv.YubiKey
-			for i := 0; i < 3; i++ {
-				yk, err = piv.Open(cards[0])
-				if err == nil {
-					break
+					fyne.Do(func() {
+						if progBar != nil {
+							progBar.SetValue(2)
+						}
+					})
 				}
-				time.Sleep(1 * time.Second)
-			}
-			
-			if err != nil {
-				killChan := make(chan bool)
+
+				// Prompt for PIN in Fyne GUI
+				pinChan := make(chan string)
 				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					dialog.ShowConfirm("PIV Error", "Failed to open YubiKey (outstanding connections). Force kill conflicting background processes?", func(b bool) {
-						killChan <- b
+					entry := widget.NewPasswordEntry()
+					dialog.ShowCustomConfirm("YubiKey PIN Required", "Sign", "Cancel", entry, func(b bool) {
+						if b {
+							pinChan <- entry.Text
+						} else {
+							pinChan <- ""
+						}
 					}, win)
 				})
-				
-				if <-killChan {
-					if runtime.GOOS == "windows" {
-						exec.Command("taskkill", "/IM", "scardsvr.exe", "/F").Run()
-						exec.Command("taskkill", "/IM", "gpg-agent.exe", "/F").Run()
-						exec.Command("net", "start", "scardsvr").Run()
-					} else {
-						exec.Command("killall", "gpg-agent").Run()
-					}
-					time.Sleep(2 * time.Second)
-					yk, err = piv.Open(cards[0])
-				}
-				
-				if err != nil {
+
+				pin := <-pinChan
+				if pin == "" {
 					fyne.Do(func() {
-						appendStatus("PIV Error: Failed to open YubiKey (%v)", err)
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("Publish cancelled (no PIN provided).")
 						publishBtn.SetRunning(false)
 						publishBtn.SetEnabled(true)
 					})
 					return
 				}
-				
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Show()
-					}
-				})
-			}
-			defer yk.Close()
-			
-			// Load the certificate for Slot 9C
-			cert, err := yk.Certificate(piv.SlotSignature)
-			if err != nil {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("PIV Error: Failed to read certificate from Slot 9C (%v)", err)
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
 
-			// Access the private key securely
-			priv, err := yk.PrivateKey(piv.SlotSignature, cert.PublicKey, piv.KeyAuth{PIN: pin})
-			if err != nil {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("PIV Error: Authentication failed (wrong PIN?) - %v", err)
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-			
-			// Hash the challenge and sign it
-			hash := sha256.Sum256([]byte(challenge))
-			signer, ok := priv.(crypto.Signer)
-			if !ok {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("PIV Error: Key is not a valid signer")
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-			
-			sig, err := signer.Sign(rand.Reader, hash[:], crypto.SHA256)
-			
-			if err != nil {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("PIV Sign failed: %v", err)
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-			
-			signature := base64.StdEncoding.EncodeToString(sig)
-			updateStatus("PIV Signature acquired successfully.")
-			fyne.Do(func() { if progBar != nil { progBar.SetValue(3) } })
-			
-			sysVer := sysVerEntry.Text
-			if publishMode == "Installer Update" {
-				sysVer = installerSysVerEntry.Text
-			} else if publishMode == "Plugin Update" {
-				sysVer = pluginSysVerEntry.Text
-			}
-			if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
-				sysVer = "v" + sysVer
-			}
+				// 3. Sign using Native PIV Applet
+				updateStatus("3. Signing challenge with YubiKey (PIV)...")
 
-			var minCoreVer string
-			if publishMode == "Plugin Update" && len(versions) > 0 {
-				minCoreVer = FindMinimumCoreVersion(versions[0].sourcePath)
-			}
-
-			// 4. Upload
-			updateStatus("4. Uploading payload and changelog to API...")
-			err = api.PublishSystem(sysID, sysVer, notes, signature, payloadChecksum, zipPath, minCoreVer, regData, nil, nil)
-			if err != nil {
-				fyne.Do(func() {
-					if progress != nil {
-						progress.Hide()
-					}
-					appendStatus("API upload failed: %v", err)
-					publishBtn.SetRunning(false)
-					publishBtn.SetEnabled(true)
-				})
-				return
-			}
-			fyne.Do(func() { if progBar != nil { progBar.SetValue(4) } })
-
-			fyne.Do(func() {
-				if progress != nil {
-					progress.Hide()
+				cards, err := piv.Cards()
+				if err != nil || len(cards) == 0 {
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("PIV Error: No smart cards found (%v)", err)
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
+					})
+					return
 				}
-				publishBtn.SetRunning(false)
-				publishBtn.SetEnabled(true)
-				changelogEntry.SetText("")
-				appendStatus("Successfully published %s", sysName)
-				g.showAnimatedDialog("Published", "Release published successfully.", false)
-			})
-		}()
-	}
-		
+
+				var yk *piv.YubiKey
+				for i := 0; i < 3; i++ {
+					yk, err = piv.Open(cards[0])
+					if err == nil {
+						break
+					}
+					time.Sleep(1 * time.Second)
+				}
+
+				if err != nil {
+					killChan := make(chan bool)
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						dialog.ShowConfirm("PIV Error", "Failed to open YubiKey (outstanding connections). Force kill conflicting background processes?", func(b bool) {
+							killChan <- b
+						}, win)
+					})
+
+					if <-killChan {
+						if runtime.GOOS == "windows" {
+							exec.Command("taskkill", "/IM", "scardsvr.exe", "/F").Run()
+							exec.Command("taskkill", "/IM", "gpg-agent.exe", "/F").Run()
+							exec.Command("net", "start", "scardsvr").Run()
+						} else {
+							exec.Command("killall", "gpg-agent").Run()
+						}
+						time.Sleep(2 * time.Second)
+						yk, err = piv.Open(cards[0])
+					}
+
+					if err != nil {
+						fyne.Do(func() {
+							appendStatus("PIV Error: Failed to open YubiKey (%v)", err)
+							publishBtn.SetRunning(false)
+							publishBtn.SetEnabled(true)
+						})
+						return
+					}
+
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Show()
+						}
+					})
+				}
+				defer yk.Close()
+
+				// Load the certificate for Slot 9C
+				cert, err := yk.Certificate(piv.SlotSignature)
+				if err != nil {
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("PIV Error: Failed to read certificate from Slot 9C (%v)", err)
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
+					})
+					return
+				}
+
+				// Access the private key securely
+				priv, err := yk.PrivateKey(piv.SlotSignature, cert.PublicKey, piv.KeyAuth{PIN: pin})
+				if err != nil {
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("PIV Error: Authentication failed (wrong PIN?) - %v", err)
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
+					})
+					return
+				}
+
+				// Hash the challenge and sign it
+				hash := sha256.Sum256([]byte(challenge))
+				signer, ok := priv.(crypto.Signer)
+				if !ok {
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("PIV Error: Key is not a valid signer")
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
+					})
+					return
+				}
+
+				sig, err := signer.Sign(rand.Reader, hash[:], crypto.SHA256)
+
+				if err != nil {
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("PIV Sign failed: %v", err)
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
+					})
+					return
+				}
+
+				signature := base64.StdEncoding.EncodeToString(sig)
+				updateStatus("PIV Signature acquired successfully.")
+				fyne.Do(func() {
+					if progBar != nil {
+						progBar.SetValue(3)
+					}
+				})
+
+				sysVer := sysVerEntry.Text
+				if publishMode == "Installer Update" {
+					sysVer = installerSysVerEntry.Text
+				} else if publishMode == "Plugin Update" {
+					sysVer = pluginSysVerEntry.Text
+				}
+				if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
+					sysVer = "v" + sysVer
+				}
+
+				var minCoreVer string
+				if publishMode == "Plugin Update" && len(versions) > 0 {
+					minCoreVer = FindMinimumCoreVersion(versions[0].sourcePath)
+				}
+
+				// 4. Upload
+				updateStatus("4. Uploading payload and changelog to API...")
+				err = api.PublishSystem(sysID, sysVer, notes, signature, payloadChecksum, zipPath, minCoreVer, regData, nil, nil)
+				if err != nil {
+					fyne.Do(func() {
+						if progress != nil {
+							progress.Hide()
+						}
+						appendStatus("API upload failed: %v", err)
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
+					})
+					return
+				}
+				fyne.Do(func() {
+					if progBar != nil {
+						progBar.SetValue(4)
+					}
+				})
+
+				fyne.Do(func() {
+					if progress != nil {
+						progress.Hide()
+					}
+					publishBtn.SetRunning(false)
+					publishBtn.SetEnabled(true)
+					changelogEntry.SetText("")
+					appendStatus("Successfully published %s", sysName)
+					g.showAnimatedDialog("Published", "Release published successfully.", false)
+				})
+			}()
+		}
+
 		if publishMode == "Installer Update" {
 			if installerType == "Source" {
 				sysID = "GorgeousInstaller-Source"
@@ -918,7 +875,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	offlinePublishBtn = newAccentButton("Offline Publish", accentUpdate, func() {
 		sysVer := sysVerEntry.Text
 		var manifestToPass *SystemManifest = loadedManifest
-		
+
 		if publishMode == "Installer Update" {
 			sysVer = installerSysVerEntry.Text
 			if installerType == "Source" {
@@ -946,7 +903,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		if publishMode == "Plugin Update" {
 			sysVer = pluginSysVerEntry.Text
 		}
-		
+
 		if sysVer != "" && !strings.HasPrefix(sysVer, "v") {
 			sysVer = "v" + sysVer
 		}
@@ -985,7 +942,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			inputRow,
 		),
 	)
-	
+
 	manageSection := g.buildManageContentSection(win, appendStatus)
 	manageSection.Hide()
 
@@ -1070,7 +1027,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		}
 	})
 	modeSelector.Horizontal = true
-	
+
 	modeSection := newGTCard("Publish Mode", "Select the type of release", container.NewVBox(modeSelector))
 
 	changelogSection = newGTCard("Release Notes URL", "Link to release notes or changelog",
