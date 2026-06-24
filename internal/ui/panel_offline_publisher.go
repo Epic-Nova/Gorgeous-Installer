@@ -443,26 +443,10 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 			updateStatus("Final installer zip created: %s", finalZip)
 		}
 	} else {
-		// For Plugin/Pack updates, also create a zip with binaries and config
+		// For Plugin/Pack updates, create a zip with just packs and config.json
 		updateStatus("Creating offline update zip...")
-		// Copy config.json to temp dir
-		configSrc := filepath.Join(tempDir, "config.json")
-		configDst := filepath.Join(tempDir, "config.json")
-		copyFile(configSrc, configDst)
-		
-		// Copy binaries to temp dir
-		linuxBinTemp := filepath.Join(tempDir, "Gorgeous-Installer-"+manifestID)
-		windowsBinTemp := filepath.Join(tempDir, "Gorgeous-Installer-"+manifestID+".exe")
-		if _, err := os.Stat(linuxBinSrc); err == nil {
-			copyFile(linuxBinSrc, linuxBinTemp)
-			os.Chmod(linuxBinTemp, 0755)
-		}
-		if _, err := os.Stat(windowsBinSrc); err == nil {
-			copyFile(windowsBinSrc, windowsBinTemp)
-		}
-
-		// Copy packs to temp dir
-		cmdCpPacksTemp := exec.Command("cp", "-R", filepath.Join(packsDir, ".")+"/", tempDir+"/")
+		// Copy packs to temp dir for zipping (this includes SHA files)
+		cmdCpPacksTemp := exec.Command("cp", "-R", filepath.Join(packsDir, ".")+"/", tempDir+"/packs/")
 		cmdCpPacksTemp.Run()
 
 		offlineZip := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s.zip", manifestID))
