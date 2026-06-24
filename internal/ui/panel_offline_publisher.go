@@ -442,6 +442,37 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		} else {
 			updateStatus("Final installer zip created: %s", finalZip)
 		}
+	} else {
+		// For Plugin/Pack updates, also create a zip with binaries and config
+		updateStatus("Creating offline update zip...")
+		// Copy config.json to temp dir
+		configSrc := filepath.Join(tempDir, "config.json")
+		configDst := filepath.Join(tempDir, "config.json")
+		copyFile(configSrc, configDst)
+		
+		// Copy binaries to temp dir
+		linuxBinTemp := filepath.Join(tempDir, "Gorgeous-Installer-"+manifestID)
+		windowsBinTemp := filepath.Join(tempDir, "Gorgeous-Installer-"+manifestID+".exe")
+		if _, err := os.Stat(linuxBinSrc); err == nil {
+			copyFile(linuxBinSrc, linuxBinTemp)
+			os.Chmod(linuxBinTemp, 0755)
+		}
+		if _, err := os.Stat(windowsBinSrc); err == nil {
+			copyFile(windowsBinSrc, windowsBinTemp)
+		}
+
+		// Copy packs to temp dir
+		cmdCpPacksTemp := exec.Command("cp", "-R", filepath.Join(packsDir, ".")+"/", tempDir+"/")
+		cmdCpPacksTemp.Run()
+
+		offlineZip := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s.zip", manifestID))
+		cmdZipOffline := exec.Command("zip", "-r", offlineZip, ".")
+		cmdZipOffline.Dir = tempDir
+		if err := cmdZipOffline.Run(); err != nil {
+			updateStatus("Failed to create offline update zip: %v", err)
+		} else {
+			updateStatus("Offline update zip created: %s", offlineZip)
+		}
 	}
 
 	updateStatus("Offline publisher build completed! Files written to %s", outDir)
