@@ -30,6 +30,7 @@ type cliOptions struct {
 	VerifyCompatibility bool
 	ExplicitCLIArg      bool
 	AutoBuildProject    bool
+	RegenerateProject   bool
 }
 
 func main() {
@@ -49,6 +50,7 @@ func main() {
 	waitForPID := flag.Int("wait-for-pid", 0, "Wait for the specified Process ID to terminate before running")
 	verifyCompat := flag.Bool("verify-compatibility", false, "Show UI for binary offset mismatch resolution and recompile plugins")
 	reopenProject := flag.Bool("reopen-project", false, "Reopen the Unreal Editor project after successful compilation/installation")
+	regenerateProject := flag.Bool("regenerate-project", false, "Regenerate project files and recompile plugin")
 	showBuildInfo := flag.Bool("version-info", false, "Print build metadata and exit")
 	flag.Parse()
 
@@ -79,6 +81,7 @@ func main() {
 		ReopenProject:       *reopenProject,
 		VerifyCompatibility: *verifyCompat,
 		ExplicitCLIArg:      *cliMode,
+		RegenerateProject:   *regenerateProject,
 	}
 
 	if opts.ProjectPath == "" && len(flag.Args()) > 0 {
@@ -154,7 +157,7 @@ func runCLIMode(cfg *config.Config, opts cliOptions) {
 		}
 		fmt.Println("Update successful.")
 		if opts.ReopenProject {
-			if err := unreal.OpenProject(opts.ProjectPath); err != nil {
+			if err := unreal.LaunchUnrealEditorWithFlag(opts.ProjectPath, "RegenerateProjectFiles"); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to reopen project: %v\n", err)
 				os.Exit(1)
 			}
@@ -162,9 +165,9 @@ func runCLIMode(cfg *config.Config, opts cliOptions) {
 		return
 	}
 
-	if opts.VerifyCompatibility {
+	if opts.VerifyCompatibility || opts.RegenerateProject {
 		if opts.ProjectPath == "" {
-			fmt.Fprintln(os.Stderr, "[gorgeous-installer] Error: --project is required for --verify-compatibility")
+			fmt.Fprintln(os.Stderr, "[gorgeous-installer] Error: --project is required for verify-compatibility or regenerate-project")
 			os.Exit(1)
 		}
 		absPath, err := filepath.Abs(opts.ProjectPath)
@@ -174,8 +177,8 @@ func runCLIMode(cfg *config.Config, opts cliOptions) {
 		}
 		opts.ProjectPath = absPath
 		opts.RecompileOnly = true
-		// Automatically trigger the silent Focus Mode modal instead of the dashboard
-		opts.AutoBuildProject = false // Keep false so VerifyCompat handles it distinctly
+		opts.VerifyCompatibility = false
+		opts.AutoBuildProject = false
 		runGUIMode(cfg, opts)
 		return
 	}
@@ -289,7 +292,7 @@ func runCLIInstall(cfg *config.Config, opts cliOptions) {
 
 func runGUIMode(cfg *config.Config, opts cliOptions) {
 	fmt.Println("Starting installer in GUI mode...")
-	app := ui.NewGUIApp(cfg, opts.RecompileOnly, opts.WaitForPID, opts.ReopenProject, opts.AutoBuildProject, opts.VerifyCompatibility, opts.InstallZip)
+	app := ui.NewGUIApp(cfg, opts.RecompileOnly, opts.WaitForPID, opts.ReopenProject, opts.AutoBuildProject, opts.VerifyCompatibility, opts.InstallZip, opts.RegenerateProject)
 	app.ProjectPath = opts.ProjectPath
 	app.Run()
 }

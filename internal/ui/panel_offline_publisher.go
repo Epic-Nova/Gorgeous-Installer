@@ -344,13 +344,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		})
 	}
 
-	updateStatus("Generating config.json with checksums...")
-	for i := range availVersions {
-		shaPath := filepath.Join(packsDir, availVersions[i].SHAFile)
-		if shaData, err := os.ReadFile(shaPath); err == nil {
-			availVersions[i].CheckSum = string(strings.TrimSpace(string(shaData)))
-		}
-	}
+	updateStatus("Generating config.json...")
 	cfg := config.Config{
 		PackName:          manifestID,
 		PackType:          "hybrid",

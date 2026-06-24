@@ -111,6 +111,9 @@ func (i *Installer) effectiveAction(plan *InstallPlan) InstallAction {
 
 // Install performs the installation based on pack type
 func (i *Installer) Install() error {
+	i.logf("Install called: PackVersion=%v, RecompileOnly=%v, PluginPath=%s, EnginePath=%s, ProjectPath=%s",
+		i.PackVersion, i.RecompileOnly, i.PluginPath, i.EnginePath, i.ProjectPath)
+
 	// If we're fully packless and just recompiling, don't even check PackType
 	if i.PackVersion == nil && i.RecompileOnly {
 		i.logf("Packless recompile-only mode — invoking UnrealBuildTool directly")
@@ -293,6 +296,7 @@ func (i *Installer) installHybridPack() error {
 
 // recompilePlugin attempts to recompile the plugin using UnrealBuildTool
 func (i *Installer) recompilePlugin() error {
+	i.logf("recompilePlugin: EnginePath=%s, PluginPath=%s, ProjectPath=%s", i.EnginePath, i.PluginPath, i.ProjectPath)
 	if strings.TrimSpace(i.EnginePath) == "" {
 		return fmt.Errorf("engine path is required to compile code packs")
 	}

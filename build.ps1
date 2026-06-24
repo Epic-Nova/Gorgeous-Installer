@@ -175,31 +175,6 @@ function Resolve-UPXExecutable {
         }
     }
 
-    $toolsDir = Join-Path $scriptDir ".tools"
-    $localUpx = Join-Path $toolsDir "upx.exe"
-    if (Test-Path $localUpx) {
-        return $localUpx
-    }
-
-    Write-Host "UPX not found in PATH. Automatically downloading UPX..." -ForegroundColor Cyan
-    if (-not (Test-Path $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir | Out-Null }
-    
-    $upxUrl = "https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-win64.zip"
-    $zipPath = Join-Path $toolsDir "upx.zip"
-    Invoke-WebRequest -Uri $upxUrl -OutFile $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath $toolsDir -Force
-    
-    $extractedExe = Join-Path $toolsDir "upx-5.2.0-win64\upx.exe"
-    if (Test-Path $extractedExe) {
-        Copy-Item $extractedExe -Destination $localUpx -Force
-    }
-    Remove-Item $zipPath -Force
-    Remove-Item (Join-Path $toolsDir "upx-5.2.0-win64") -Recurse -Force
-    
-    if (Test-Path $localUpx) {
-        return $localUpx
-    }
-
     return $null
 }
 
@@ -367,11 +342,11 @@ if ($UseUPX -or -not $SkipUPX) {
         Write-Host "UPX compression completed" -ForegroundColor Green
     } else {
         if ($UseUPX) {
-            Write-Host "UPX was requested but could not be resolved or downloaded" -ForegroundColor Red
+            Write-Host "UPX was requested but not found in PATH" -ForegroundColor Red
             Pop-Location
             exit 1
         }
-        Write-Host "UPX not found and auto-download failed; build continues uncompressed." -ForegroundColor Yellow
+        Write-Host "UPX not found in PATH; build continues uncompressed (install UPX or use -UseUPX for strict mode)" -ForegroundColor Yellow
     }
 }
 

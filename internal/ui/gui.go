@@ -339,6 +339,7 @@ type GUIApp struct {
 	ProjectPath      string
 	installSucceeded bool
 	installZipPath   string
+	RegenerateProject bool
 
 	win         fyne.Window
 	modalLayer  *fyne.Container
@@ -414,8 +415,8 @@ func (l *modalGroupLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 }
 
 // NewGUIApp creates a new GUI app instance.
-func NewGUIApp(cfg *config.Config, recompileOnly bool, waitPid int, reopenProject bool, autoBuildProject bool, verifyCompat bool, installZip string) *GUIApp {
-	return &GUIApp{config: cfg, recompileOnly: recompileOnly, waitForPID: waitPid, reopenProject: reopenProject, AutoBuildProject: autoBuildProject, VerifyCompat: verifyCompat, installZipPath: installZip}
+func NewGUIApp(cfg *config.Config, recompileOnly bool, waitPid int, reopenProject bool, autoBuildProject bool, verifyCompat bool, installZip string, regenerateProject bool) *GUIApp {
+	return &GUIApp{config: cfg, recompileOnly: recompileOnly, waitForPID: waitPid, reopenProject: reopenProject, AutoBuildProject: autoBuildProject, VerifyCompat: verifyCompat, installZipPath: installZip, RegenerateProject: regenerateProject}
 }
 
 func (g *GUIApp) isPackless() bool {
@@ -1182,9 +1183,12 @@ func (g *GUIApp) Run() {
 	if g.ProjectPath == "" {
 		g.ProjectPath = findUProjectUpwards()
 	}
+	appendStatus("ProjectPath: %s, RegenerateProject: %v, recompileOnly: %v", g.ProjectPath, g.RegenerateProject, g.recompileOnly)
 	if g.ProjectPath != "" {
 		loadProject(g.ProjectPath)
-		if !g.AutoBuildProject && !g.VerifyCompat && g.recompileOnly && !isPackless {
+		if g.RegenerateProject {
+			appendStatus("RegenerateProject flag detected, starting recompilation...")
+		} else if !g.AutoBuildProject && !g.VerifyCompat && g.recompileOnly && !isPackless {
 			time.AfterFunc(800*time.Millisecond, func() {
 				fyne.Do(func() { actionBtn.Trigger() })
 			})
@@ -1349,6 +1353,41 @@ func (g *GUIApp) Run() {
 				g.showProjectTaskModal(g.ProjectPath, "", ProjectTaskInstallZip)
 			})
 		})
+	}
+
+	// Handle RegenerateProject mode after window is shown
+	if g.RegenerateProject && g.ProjectPath != "" {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			_, enginePath, detectErr := unreal.GetEngineVersionFromProject(g.ProjectPath)
+			if detectErr != nil {
+				fyne.Do(func() {
+					appendStatus("Failed to detect engine path: %v", detectErr)
+				})
+				return
+			}
+			pluginPath, err := unreal.LocatePluginByName(filepath.Dir(g.ProjectPath), enginePath, g.config.PackName)
+			if err != nil {
+				pluginPath = filepath.Join(filepath.Dir(g.ProjectPath), "Plugins", "GorgeousThings", g.config.PackName)
+			}
+			fyne.Do(func() {
+				appendStatus("Starting recompilation: PluginPath=%s, EnginePath=%s, ProjectPath=%s", pluginPath, enginePath, g.ProjectPath)
+			})
+			inst := installer.NewInstaller(pluginPath, "code", nil, "", g.ProjectPath, enginePath)
+			inst.RecompileOnly = true
+			inst.StatusLogger = appendStatus
+			inst.SetRunContext(context.Background())
+			if err := inst.Install(); err != nil {
+				fyne.Do(func() {
+					appendStatus("Regeneration failed: %v", err)
+				})
+				return
+			}
+			fyne.Do(func() {
+				appendStatus("Regeneration complete. Exiting...")
+			})
+			os.Exit(0)
+		}()
 	}
 
 	win.ShowAndRun()

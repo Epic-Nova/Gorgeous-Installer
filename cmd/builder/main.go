@@ -33,10 +33,9 @@ func main() {
 		InstallPath: "Content",
 		AvailableVersions: []config.PackVersion{
 			{
-				Version:  *version,
-				Path:     *packPath,
-				SHAFile:  *shaFile,
-				CheckSum: "", // Could be computed here
+				Version: *version,
+				Path:    *packPath,
+				SHAFile: *shaFile,
 			},
 		},
 	}

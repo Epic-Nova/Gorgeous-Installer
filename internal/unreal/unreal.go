@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -364,4 +365,35 @@ func CheckProjectBinaries(projectPath string) bool {
 
 	// Exact compatibility check
 	return projModules.BuildId == engModules.BuildId
+}
+
+// LaunchUnrealEditorWithFlag launches the Unreal Editor with the specified flag.
+func LaunchUnrealEditorWithFlag(projectPath, flag string) error {
+	uprojectPath, err := findUProjectFile(projectPath)
+	if err != nil {
+		return fmt.Errorf("could not find .uproject file: %w", err)
+	}
+
+	_, enginePath, err := GetEngineVersionFromProject(projectPath)
+	if err != nil {
+		return fmt.Errorf("could not resolve engine path: %w", err)
+	}
+
+	var editorExe string
+	if runtime.GOOS == "windows" {
+		editorExe = filepath.Join(enginePath, "Engine", "Binaries", "Win64", "UnrealEditor.exe")
+	} else if runtime.GOOS == "darwin" {
+		editorExe = filepath.Join(enginePath, "Engine", "Binaries", "Mac", "UnrealEditor.app", "Contents", "MacOS", "UnrealEditor")
+	} else {
+		editorExe = filepath.Join(enginePath, "Engine", "Binaries", "Linux", "UnrealEditor")
+	}
+
+	if _, err := os.Stat(editorExe); os.IsNotExist(err) {
+		return fmt.Errorf("editor executable not found at %s", editorExe)
+	}
+
+	cmd := exec.Command(editorExe, uprojectPath, "-"+flag)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Start()
 }
