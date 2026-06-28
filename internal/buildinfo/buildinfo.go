@@ -3,8 +3,8 @@ package buildinfo
 
 const (
     Version   = "1.0.0"
-    GitCommit = "9b7b45c"
-    BuildTime = "2026-06-28T16:04:46Z"
+    GitCommit = "1994fbf"
+    BuildTime = "2026-06-28T16:21:49Z"
     Platform  = "Linux_x86_64"
 )
 

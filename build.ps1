@@ -46,22 +46,52 @@ if (-not $gccInPath) {
     }
 }
 
+function Get-MSYS2Path {
+    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
+    foreach ($drive in $drives) {
+        $candidate = Join-Path $drive "msys64"
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    $registryPaths = @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    $regPath = Get-ItemProperty $registryPaths -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like "*MSYS2*" } |
+        Select-Object -ExpandProperty InstallLocation -First 1
+
+    if ($regPath -and (Test-Path $regPath)) {
+        return $regPath
+    }
+    return $null
+}
+
 if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    if (Test-Path "C:\msys64") {
-        Write-Host "MSYS2 is installed but gcc was not found. Installing gcc toolchain..." -ForegroundColor Yellow
-        & "C:\msys64\usr\bin\bash.exe" -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
+    $msysRoot = Get-MSYS2Path
+    if ($msysRoot) {
+        Write-Host "MSYS2 is installed at $msysRoot but gcc was not found. Installing gcc toolchain..." -ForegroundColor Yellow
+        $bashExe = Join-Path $msysRoot "usr\bin\bash.exe"
+        & $bashExe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
     } else {
         Write-Host "gcc compiler not found. Attempting to install MSYS2 (gcc toolchain) via winget..." -ForegroundColor Yellow
         winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements --silent
-        if (Test-Path "C:\msys64") {
-            Write-Host "MSYS2 installed successfully. Installing gcc toolchain..." -ForegroundColor Green
-            & "C:\msys64\usr\bin\bash.exe" -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
+        $msysRoot = Get-MSYS2Path
+        if ($msysRoot) {
+            Write-Host "MSYS2 installed successfully at $msysRoot. Installing gcc toolchain..." -ForegroundColor Green
+            $bashExe = Join-Path $msysRoot "usr\bin\bash.exe"
+            & $bashExe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
         }
     }
     
-    $msys64Path = "C:\msys64\mingw64\bin"
-    if (Test-Path (Join-Path $msys64Path "gcc.exe")) {
-        $env:PATH = "$msys64Path;" + $env:PATH
+    if ($msysRoot) {
+        $msys64Path = Join-Path $msysRoot "mingw64\bin"
+        if (Test-Path (Join-Path $msys64Path "gcc.exe")) {
+            $env:PATH = "$msys64Path;" + $env:PATH
+        }
     }
     
     $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
