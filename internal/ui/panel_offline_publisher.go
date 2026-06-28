@@ -344,6 +344,18 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		})
 	}
 
+	if len(availVersions) > 1 {
+		var allVersions []string
+		for _, pv := range availVersions {
+			allVersions = append(allVersions, pv.Version)
+		}
+		availVersions = append(availVersions, config.PackVersion{
+			Version:           "Universal",
+			Path:              "packs",
+			SupportedVersions:   allVersions,
+		})
+	}
+
 	updateStatus("Generating config.json...")
 	cfg := config.Config{
 		PackName:          manifestID,

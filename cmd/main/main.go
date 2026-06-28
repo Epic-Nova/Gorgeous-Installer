@@ -411,9 +411,22 @@ func selectOptimalPackVersion(cfg *config.Config, ueVersion string) *config.Pack
 		}
 	}
 
-	// If no exact match, prefer older versions
-	if !foundExact && len(cfg.AvailableVersions) > 0 {
+	// If no exact match, check for Universal pack
+	if !foundExact {
 		for _, pv := range cfg.AvailableVersions {
+			if pv.Version == "Universal" {
+				bestMatch = &pv
+				break
+			}
+		}
+	}
+
+	// If no exact match or Universal, prefer older versions
+	if !foundExact && bestMatch == nil && len(cfg.AvailableVersions) > 0 {
+		for _, pv := range cfg.AvailableVersions {
+			if pv.Version == "Universal" {
+				continue
+			}
 			if isVersionOlder(pv.Version, normalizedVersion) {
 				if bestMatch == nil || isVersionOlder(bestMatch.Version, pv.Version) {
 					bestMatch = &pv

@@ -610,6 +610,18 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						})
 					}
 
+					if len(availVersions) > 1 {
+						var allVersions []string
+						for _, pv := range availVersions {
+							allVersions = append(allVersions, pv.Version)
+						}
+						availVersions = append(availVersions, config.PackVersion{
+							Version:         "Universal",
+							Path:            "packs",
+							SupportedVersions: allVersions,
+						})
+					}
+
 					cfg := config.Config{
 						PackName:          loadedManifest.ID,
 						PackType:          "hybrid",

@@ -16,7 +16,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Add Go to PATH
+# Ensure Go is installed
+$goInPath = Get-Command go -ErrorAction SilentlyContinue
+if (-not $goInPath) {
+    Write-Host "Go not found. Attempting to install Go via winget..." -ForegroundColor Yellow
+    winget install --id GoLang.Go -e --accept-source-agreements --accept-package-agreements --silent
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to install Go. Please install Go manually from https://go.dev/dl/" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Go installed successfully" -ForegroundColor Green
+}
 $env:PATH = "C:\Program Files\Go\bin;" + $env:PATH
 
 # Ensure a GCC toolchain is available for CGO (required by Fyne)
@@ -37,7 +47,35 @@ if (-not $gccInPath) {
 }
 
 if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    Write-Host "gcc compiler not found. Install WinLibs or provide gcc in PATH." -ForegroundColor Red
+    Write-Host "gcc compiler not found. Attempting to install MSYS2 (gcc toolchain) via winget..." -ForegroundColor Yellow
+    winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements --silent
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "gcc compiler not found. Install WinLibs or MSYS2 to provide gcc." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "MSYS2 installed successfully" -ForegroundColor Green
+    
+    $msys64Path = "C:\msys64\mingw64\bin"
+    if (Test-Path (Join-Path $msys64Path "gcc.exe")) {
+        $env:PATH = "$msys64Path;" + $env:PATH
+    }
+    
+    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    $winlibsDir = Get-ChildItem $wingetRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "*mingw*" -or $_.Name -like "*WinLibs*" } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    
+    if ($winlibsDir) {
+        $mingwBin = Join-Path $winlibsDir.FullName "mingw64\bin"
+        if (Test-Path (Join-Path $mingwBin "gcc.exe")) {
+            $env:PATH = "$mingwBin;" + $env:PATH
+        }
+    }
+}
+
+if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+    Write-Host "gcc compiler not found. Install WinLibs or MSYS2 to provide gcc." -ForegroundColor Red
     exit 1
 }
 
