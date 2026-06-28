@@ -385,7 +385,8 @@ $versionInfo = $winresObject.RT_VERSION."#1"."0000".info."0409"
 $versionInfo | Add-Member -NotePropertyName "Comments" -NotePropertyValue "Commit $gitCommit" -Force
 $versionInfo | Add-Member -NotePropertyName "PrivateBuild" -NotePropertyValue $gitCommit -Force
 $versionInfo | Add-Member -NotePropertyName "SpecialBuild" -NotePropertyValue $buildTimeUtc -Force
-$winresObject | ConvertTo-Json -Depth 20 | Set-Content -Path $generatedWinresPath -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($generatedWinresPath, ($winresObject | ConvertTo-Json -Depth 20), $utf8NoBom)
 
 go build -trimpath -ldflags $ldflags -o $exePath ./cmd/main
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exePath)) {
