@@ -382,9 +382,9 @@ $ldflags = "-s -w -buildid= -H windowsgui -X gorgeous-installer/internal/buildin
 
 $winresObject = Get-Content "winres.json" -Raw | ConvertFrom-Json
 $versionInfo = $winresObject.RT_VERSION."#1"."0000".info."0409"
-$versionInfo.Comments = "Commit $gitCommit"
-$versionInfo.PrivateBuild = $gitCommit
-$versionInfo.SpecialBuild = $buildTimeUtc
+$versionInfo | Add-Member -NotePropertyName "Comments" -NotePropertyValue "Commit $gitCommit" -Force
+$versionInfo | Add-Member -NotePropertyName "PrivateBuild" -NotePropertyValue $gitCommit -Force
+$versionInfo | Add-Member -NotePropertyName "SpecialBuild" -NotePropertyValue $buildTimeUtc -Force
 $winresObject | ConvertTo-Json -Depth 20 | Set-Content -Path $generatedWinresPath -Encoding UTF8
 
 go build -trimpath -ldflags $ldflags -o $exePath ./cmd/main
