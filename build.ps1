@@ -288,7 +288,7 @@ if (-not $packFiles) {
 
 Write-Host "Generating SHA manifests for configured versions..." -ForegroundColor Yellow
 try {
-    $configData = Get-Content "config.json" -Raw | ConvertFrom-Json -Depth 20
+    $configData = Get-Content "config.json" -Raw | ConvertFrom-Json
 } catch {
     Write-Host "Failed to parse config.json: $($_.Exception.Message)" -ForegroundColor Red
     Pop-Location
@@ -374,11 +374,11 @@ try {
 $buildTimeUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $ldflags = "-s -w -buildid= -H windowsgui -X gorgeous-installer/internal/buildinfo.CommitSHA=$gitCommit -X gorgeous-installer/internal/buildinfo.BuildTime=$buildTimeUtc"
 
-$winresObject = Get-Content "winres.json" -Raw | ConvertFrom-Json -AsHashtable
-$versionInfo = $winresObject["RT_VERSION"]["#1"]["0000"]["info"]["0409"]
-$versionInfo["Comments"] = "Commit $gitCommit"
-$versionInfo["PrivateBuild"] = $gitCommit
-$versionInfo["SpecialBuild"] = $buildTimeUtc
+$winresObject = Get-Content "winres.json" -Raw | ConvertFrom-Json
+$versionInfo = $winresObject.RT_VERSION."#1"."0000".info."0409"
+$versionInfo.Comments = "Commit $gitCommit"
+$versionInfo.PrivateBuild = $gitCommit
+$versionInfo.SpecialBuild = $buildTimeUtc
 $winresObject | ConvertTo-Json -Depth 20 | Set-Content -Path $generatedWinresPath -Encoding UTF8
 
 go build -trimpath -ldflags $ldflags -o $exePath ./cmd/main
