@@ -296,10 +296,8 @@ try {
 }
 
 if (-not $configData.availableVersions -or $configData.availableVersions.Count -eq 0) {
-    Write-Host "config.json has no availableVersions entries" -ForegroundColor Red
-    Pop-Location
-    exit 1
-}
+    Write-Host "config.json has no availableVersions entries (skipping manifest generation)" -ForegroundColor Yellow
+} else {
 
 $configUpdated = $false
 $skippedSHAVersions = New-Object System.Collections.Generic.List[string]
@@ -349,6 +347,7 @@ if ($configUpdated) {
 
 if ($skippedSHAVersions.Count -gt 0) {
     Write-Host "SHA manifests skipped for versions: $([string]::Join(', ', $skippedSHAVersions))" -ForegroundColor Yellow
+}
 }
 
 Write-Host "Generating icon file..." -ForegroundColor Yellow
