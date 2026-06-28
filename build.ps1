@@ -16,6 +16,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Prepend default Go installation paths to PATH if they exist
+$defaultGoPaths = @("C:\Program Files\Go\bin", "C:\Go\bin")
+foreach ($p in $defaultGoPaths) {
+    if (Test-Path $p) {
+        $env:PATH = "$p;" + $env:PATH
+    }
+}
+
 # Ensure Go is installed
 $goInPath = Get-Command go -ErrorAction SilentlyContinue
 if (-not $goInPath) {
@@ -27,7 +35,6 @@ if (-not $goInPath) {
     }
     Write-Host "Go installed successfully" -ForegroundColor Green
 }
-$env:PATH = "C:\Program Files\Go\bin;" + $env:PATH
 
 # Ensure a GCC toolchain is available for CGO (required by Fyne)
 $gccInPath = Get-Command gcc -ErrorAction SilentlyContinue
