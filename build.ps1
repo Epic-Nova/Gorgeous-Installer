@@ -47,13 +47,17 @@ if (-not $gccInPath) {
 }
 
 if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    Write-Host "gcc compiler not found. Attempting to install MSYS2 (gcc toolchain) via winget..." -ForegroundColor Yellow
-    winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements --silent
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "gcc compiler not found. Install WinLibs or MSYS2 to provide gcc." -ForegroundColor Red
-        exit 1
+    if (Test-Path "C:\msys64") {
+        Write-Host "MSYS2 is installed but gcc was not found. Installing gcc toolchain..." -ForegroundColor Yellow
+        & "C:\msys64\usr\bin\bash.exe" -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
+    } else {
+        Write-Host "gcc compiler not found. Attempting to install MSYS2 (gcc toolchain) via winget..." -ForegroundColor Yellow
+        winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements --silent
+        if (Test-Path "C:\msys64") {
+            Write-Host "MSYS2 installed successfully. Installing gcc toolchain..." -ForegroundColor Green
+            & "C:\msys64\usr\bin\bash.exe" -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
+        }
     }
-    Write-Host "MSYS2 installed successfully" -ForegroundColor Green
     
     $msys64Path = "C:\msys64\mingw64\bin"
     if (Test-Path (Join-Path $msys64Path "gcc.exe")) {
