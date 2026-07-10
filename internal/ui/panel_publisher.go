@@ -698,6 +698,9 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				for i := 0; i < 3; i++ {
 					yk, ykErr = piv.Open(cards[0])
 					if ykErr == nil {
+				for i := 0; i < 3; i++ {
+					yk, err = piv.Open(cards[0])
+					if err == nil {
 						break
 					}
 					time.Sleep(1 * time.Second)
@@ -742,7 +745,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						}
 					})
 				}
-			// YubiKey will be closed explicitly after the goroutine
+				// YubiKey will be closed explicitly after the goroutine
+				defer yk.Close()
 
 				// Load the certificate for Slot 9C
 				cert, err := yk.Certificate(piv.SlotSignature)
@@ -854,10 +858,10 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					appendStatus("Successfully published %s", sysName)
 					g.showAnimatedDialog("Published", "Release published successfully.", false)
 				})
-		}()
-	}
+			}()
+		}
 
-	if publishMode == "Installer Update" {
+		if publishMode == "Installer Update" {
 			if installerType == "Source" {
 				sysID = "GorgeousInstaller-Source"
 				sysName = "Gorgeous Installer (Source)"
@@ -884,7 +888,6 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		sysDesc = loadedManifest.Description
 		runPublish()
 	})
-	publishBtn.SetEnabled(false)
 	publishBtn.SetEnabled(false)
 
 	offlinePublishBtn = newAccentButton("Offline Publish", accentUpdate, func() {

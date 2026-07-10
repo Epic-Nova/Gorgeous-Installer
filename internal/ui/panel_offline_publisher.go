@@ -344,19 +344,13 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		})
 	}
 
-	if len(availVersions) > 1 {
-		var allVersions []string
-		for _, pv := range availVersions {
-			allVersions = append(allVersions, pv.Version)
+	updateStatus("Generating config.json with checksums...")
+	for i := range availVersions {
+		shaPath := filepath.Join(packsDir, availVersions[i].SHAFile)
+		if shaData, err := os.ReadFile(shaPath); err == nil {
+			availVersions[i].CheckSum = string(strings.TrimSpace(string(shaData)))
 		}
-		availVersions = append(availVersions, config.PackVersion{
-			Version:           "Universal",
-			Path:              "packs",
-			SupportedVersions:   allVersions,
-		})
 	}
-
-	updateStatus("Generating config.json...")
 	cfg := config.Config{
 		PackName:          manifestID,
 		PackType:          "hybrid",
