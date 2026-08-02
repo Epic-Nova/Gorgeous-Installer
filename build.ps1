@@ -543,3 +543,4 @@ if ($Run) {
 }
 
 Pop-Location
+exit 0
