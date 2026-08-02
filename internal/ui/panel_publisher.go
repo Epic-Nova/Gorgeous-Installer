@@ -698,9 +698,6 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				for i := 0; i < 3; i++ {
 					yk, ykErr = piv.Open(cards[0])
 					if ykErr == nil {
-				for i := 0; i < 3; i++ {
-					yk, err = piv.Open(cards[0])
-					if err == nil {
 						break
 					}
 					time.Sleep(1 * time.Second)
