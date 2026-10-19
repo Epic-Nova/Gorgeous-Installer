@@ -344,7 +344,6 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		})
 	}
 
-	updateStatus("Generating config.json...")
 	cfg := config.Config{
 		PackName:          manifestID,
 		PackType:          "hybrid",

@@ -19,8 +19,94 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+# Auto-install missing tools
+check_and_install_gcc() {
+    if command -v gcc &> /dev/null && command -v g++ &> /dev/null; then
+        return 0
+    fi
+
+    OS_NAME=$(uname -s)
+    if [ "$OS_NAME" = "Linux" ]; then
+        if command -v apt-get &> /dev/null; then
+            echo "Installing gcc/g++ via apt-get..."
+            sudo apt-get update && sudo apt-get install -y build-essential
+        elif command -v dnf &> /dev/null; then
+            echo "Installing gcc/g++ via dnf..."
+            sudo dnf install -y gcc-c++
+        elif command -v pacman &> /dev/null; then
+            echo "Installing gcc/g++ via pacman..."
+            sudo pacman -S --noconfirm gcc
+        elif command -v yum &> /dev/null; then
+            echo "Installing gcc/g++ via yum..."
+            sudo yum install -y gcc-c++
+        else
+            echo "Could not auto-install gcc. Please install build-essential or gcc-c++."
+            exit 1
+        fi
+    elif [ "$OS_NAME" = "Darwin" ]; then
+        if command -v brew &> /dev/null; then
+            echo "Installing gcc via Homebrew..."
+            brew install gcc
+        else
+            echo "Please install Xcode Command Line Tools: xcode-select --install"
+            exit 1
+        fi
+    else
+        echo "Unsupported OS for auto-installing gcc: $OS_NAME"
+        exit 1
+    fi
+}
+
+check_and_install_go() {
+    if command -v go &> /dev/null; then
+        return 0
+    fi
+
+    OS_NAME=$(uname -s)
+    ARCH=$(uname -m)
+
+    if command -v curl &> /dev/null; then
+        GO_VERSION="1.22.0"
+        if [ "$OS_NAME" = "Linux" ]; then
+            if [ "$ARCH" = "x86_64" ]; then
+                ARCH_NAME="amd64"
+            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                ARCH_NAME="arm64"
+            else
+                echo "Unsupported architecture for Go auto-install: $ARCH"
+                exit 1
+            fi
+            GO_URL="https://go.dev/dl/go${GO_VERSION}.linux-${ARCH_NAME}.tar.gz"
+        elif [ "$OS_NAME" = "Darwin" ]; then
+            if [ "$ARCH" = "arm64" ]; then
+                ARCH_NAME="arm64"
+            else
+                ARCH_NAME="amd64"
+            fi
+            GO_URL="https://go.dev/dl/go${GO_VERSION}.darwin-${ARCH_NAME}.tar.gz"
+        else
+            echo "Unsupported OS for Go auto-install: $OS_NAME"
+            exit 1
+        fi
+
+        echo "Downloading Go $GO_VERSION..."
+        curl -sL "$GO_URL" -o /tmp/go.tar.gz || { echo "Go download failed"; exit 1; }
+        sudo rm -rf /usr/local/go
+        sudo tar -C /usr/local -xzf /tmp/go.tar.gz
+        rm /tmp/go.tar.gz
+        export PATH="/usr/local/go/bin:$PATH"
+        echo "Go installed to /usr/local/go"
+    else
+        echo "curl not available. Please install Go manually: https://go.dev/dl/"
+        exit 1
+    fi
+}
+
+check_and_install_gcc
+check_and_install_go
+
 if ! command -v gcc &> /dev/null; then
-    echo "gcc compiler not found. Please install gcc."
+    echo "gcc compiler not found after auto-install attempt. Please install gcc."
     exit 1
 fi
 

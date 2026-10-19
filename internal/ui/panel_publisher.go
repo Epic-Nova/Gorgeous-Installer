@@ -610,6 +610,18 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						})
 					}
 
+					if len(availVersions) > 1 {
+						var allVersions []string
+						for _, pv := range availVersions {
+							allVersions = append(allVersions, pv.Version)
+						}
+						availVersions = append(availVersions, config.PackVersion{
+							Version:           "Universal",
+							Path:              "packs",
+							SupportedVersions: allVersions,
+						})
+					}
+
 					cfg := config.Config{
 						PackName:          loadedManifest.ID,
 						PackType:          "hybrid",
@@ -731,6 +743,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					})
 				}
 				// YubiKey will be closed explicitly after the goroutine
+				defer yk.Close()
 
 				// Load the certificate for Slot 9C
 				cert, err := yk.Certificate(piv.SlotSignature)

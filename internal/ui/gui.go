@@ -28,7 +28,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/go-piv/piv-go/piv"
 	bundle "gorgeous-installer"
 	"gorgeous-installer/internal/api"
 	"gorgeous-installer/internal/buildinfo"
@@ -37,6 +36,8 @@ import (
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/unreal"
 	"gorgeous-installer/internal/updater"
+
+	"github.com/go-piv/piv-go/piv"
 )
 
 // ─── GT Brand Design Tokens ──────────────────────────────────────────────────
@@ -330,15 +331,15 @@ func (r *accentButtonRenderer) Objects() []fyne.CanvasObject { return r.objs }
 
 // GUIApp represents the native GUI application.
 type GUIApp struct {
-	config           *config.Config
-	recompileOnly    bool
-	waitForPID       int
-	reopenProject    bool
-	AutoBuildProject bool
-	VerifyCompat     bool
-	ProjectPath      string
-	installSucceeded bool
-	installZipPath   string
+	config            *config.Config
+	recompileOnly     bool
+	waitForPID        int
+	reopenProject     bool
+	AutoBuildProject  bool
+	VerifyCompat      bool
+	ProjectPath       string
+	installSucceeded  bool
+	installZipPath    string
 	RegenerateProject bool
 
 	win         fyne.Window
@@ -720,12 +721,31 @@ func (g *GUIApp) Run() {
 		appendStatus("Detected engine version from EngineAssociation: %s", engineVersion)
 		appendStatus("Resolved engine path: %s", enginePath)
 
-		if best := chooseClosestVersion(engineVersion, versions); best != "" {
-			autoPackVersion = best
+		best := chooseClosestVersion(engineVersion, versions)
+		if best != "" {
+			bestMajor, bestMinor := parseVersion(best)
+			engineMajor, engineMinor := parseVersion(engineVersion)
+			isConcrete := !(bestMajor > engineMajor || (bestMajor == engineMajor && bestMinor > engineMinor))
+			if isConcrete {
+				autoPackVersion = best
+				manualVersionSel = false
+				versionSelect.SetSelected(best)
+				versionSelectRow.Hide()
+				appendStatus("Selected pack version from project: %s", best)
+				if refreshPlanState != nil {
+					refreshPlanState()
+				}
+				return
+			}
+		}
+
+		if isVersionInSupportedList(engineVersion, supportedVersionsForVersion("Universal", g.config.AvailableVersions)) {
+			univVer := "Universal"
+			autoPackVersion = univVer
 			manualVersionSel = false
-			versionSelect.SetSelected(best)
+			versionSelect.SetSelected(univVer)
 			versionSelectRow.Hide()
-			appendStatus("Selected pack version from project: %s", best)
+			appendStatus("Selected Universal build: covers UE %s", engineVersion)
 			if refreshPlanState != nil {
 				refreshPlanState()
 			}
@@ -2344,6 +2364,34 @@ func chooseClosestVersion(engineVersion string, versions []string) string {
 	return best
 }
 
+func supportedVersionsForVersion(ver string, availVersions []config.PackVersion) []string {
+	if !strings.EqualFold(ver, "Universal") {
+		return nil
+	}
+	for _, pv := range availVersions {
+		if strings.EqualFold(pv.Version, "Universal") {
+			return pv.SupportedVersions
+		}
+	}
+	return nil
+}
+
+func isVersionInSupportedList(engineVer string, supported []string) bool {
+	if len(supported) == 0 {
+		return true
+	}
+	normEngine, err := unreal.NormalizeVersion(engineVer)
+	if err != nil {
+		normEngine = engineVer
+	}
+	for _, sv := range supported {
+		if sv == normEngine {
+			return true
+		}
+	}
+	return false
+}
+
 func compareVersionStrings(a, b string) int {
 	aMajor, aMinor := parseVersion(a)
 	bMajor, bMinor := parseVersion(b)
@@ -2727,6 +2775,7 @@ func (g *GUIApp) showDevModeToast() {
 	g.toastLayer.Add(toastCard)
 	g.toastLayer.Refresh()
 
+	// Animate in by sliding up
 	animIn := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {
 		v := p.X
 		g.toastLayout.offsetY = 150 * (1 - v)
@@ -2735,6 +2784,7 @@ func (g *GUIApp) showDevModeToast() {
 	animIn.Curve = fyne.AnimationEaseOut
 	animIn.Start()
 
+	// Animate away
 	time.AfterFunc(8*time.Second, func() {
 		fyne.Do(func() {
 			animOut := canvas.NewPositionAnimation(fyne.NewPos(0, 0), fyne.NewPos(1, 1), 400*time.Millisecond, func(p fyne.Position) {

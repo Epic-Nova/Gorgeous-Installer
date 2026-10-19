@@ -9,3 +9,4 @@ winres.generated.json
 !icon.png
 !config.json
 !packs/
+/internal/buildinfo/buildinfo.go

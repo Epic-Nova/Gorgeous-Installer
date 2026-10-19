@@ -16,8 +16,25 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Add Go to PATH
-$env:PATH = "C:\Program Files\Go\bin;" + $env:PATH
+# Prepend default Go installation paths to PATH if they exist
+$defaultGoPaths = @("C:\Program Files\Go\bin", "C:\Go\bin")
+foreach ($p in $defaultGoPaths) {
+    if (Test-Path $p) {
+        $env:PATH = "$p;" + $env:PATH
+    }
+}
+
+# Ensure Go is installed
+$goInPath = Get-Command go -ErrorAction SilentlyContinue
+if (-not $goInPath) {
+    Write-Host "Go not found. Attempting to install Go via winget..." -ForegroundColor Yellow
+    winget install --id GoLang.Go -e --accept-source-agreements --accept-package-agreements --silent
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to install Go. Please install Go manually from https://go.dev/dl/" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Go installed successfully" -ForegroundColor Green
+}
 
 # Ensure a GCC toolchain is available for CGO (required by Fyne)
 $gccInPath = Get-Command gcc -ErrorAction SilentlyContinue
@@ -36,8 +53,70 @@ if (-not $gccInPath) {
     }
 }
 
+function Get-MSYS2Path {
+    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
+    foreach ($drive in $drives) {
+        $candidate = Join-Path $drive "msys64"
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    $registryPaths = @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    $regPath = Get-ItemProperty $registryPaths -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like "*MSYS2*" } |
+        Select-Object -ExpandProperty InstallLocation -First 1
+
+    if ($regPath -and (Test-Path $regPath)) {
+        return $regPath
+    }
+    return $null
+}
+
 if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    Write-Host "gcc compiler not found. Install WinLibs or provide gcc in PATH." -ForegroundColor Red
+    $msysRoot = Get-MSYS2Path
+    if ($msysRoot) {
+        Write-Host "MSYS2 is installed at $msysRoot but gcc was not found. Installing gcc toolchain..." -ForegroundColor Yellow
+        $bashExe = Join-Path $msysRoot "usr\bin\bash.exe"
+        & $bashExe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
+    } else {
+        Write-Host "gcc compiler not found. Attempting to install MSYS2 (gcc toolchain) via winget..." -ForegroundColor Yellow
+        winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements --silent
+        $msysRoot = Get-MSYS2Path
+        if ($msysRoot) {
+            Write-Host "MSYS2 installed successfully at $msysRoot. Installing gcc toolchain..." -ForegroundColor Green
+            $bashExe = Join-Path $msysRoot "usr\bin\bash.exe"
+            & $bashExe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
+        }
+    }
+    
+    if ($msysRoot) {
+        $msys64Path = Join-Path $msysRoot "mingw64\bin"
+        if (Test-Path (Join-Path $msys64Path "gcc.exe")) {
+            $env:PATH = "$msys64Path;" + $env:PATH
+        }
+    }
+    
+    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    $winlibsDir = Get-ChildItem $wingetRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "*mingw*" -or $_.Name -like "*WinLibs*" } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    
+    if ($winlibsDir) {
+        $mingwBin = Join-Path $winlibsDir.FullName "mingw64\bin"
+        if (Test-Path (Join-Path $mingwBin "gcc.exe")) {
+            $env:PATH = "$mingwBin;" + $env:PATH
+        }
+    }
+}
+
+if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+    Write-Host "gcc compiler not found. Install WinLibs or MSYS2 to provide gcc." -ForegroundColor Red
     exit 1
 }
 
@@ -175,31 +254,6 @@ function Resolve-UPXExecutable {
         }
     }
 
-    $toolsDir = Join-Path $scriptDir ".tools"
-    $localUpx = Join-Path $toolsDir "upx.exe"
-    if (Test-Path $localUpx) {
-        return $localUpx
-    }
-
-    Write-Host "UPX not found in PATH. Automatically downloading UPX..." -ForegroundColor Cyan
-    if (-not (Test-Path $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir | Out-Null }
-    
-    $upxUrl = "https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-win64.zip"
-    $zipPath = Join-Path $toolsDir "upx.zip"
-    Invoke-WebRequest -Uri $upxUrl -OutFile $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath $toolsDir -Force
-    
-    $extractedExe = Join-Path $toolsDir "upx-5.2.0-win64\upx.exe"
-    if (Test-Path $extractedExe) {
-        Copy-Item $extractedExe -Destination $localUpx -Force
-    }
-    Remove-Item $zipPath -Force
-    Remove-Item (Join-Path $toolsDir "upx-5.2.0-win64") -Recurse -Force
-    
-    if (Test-Path $localUpx) {
-        return $localUpx
-    }
-
     return $null
 }
 
@@ -241,7 +295,7 @@ if (-not $packFiles) {
 
 Write-Host "Generating SHA manifests for configured versions..." -ForegroundColor Yellow
 try {
-    $configData = Get-Content "config.json" -Raw | ConvertFrom-Json -Depth 20
+    $configData = Get-Content "config.json" -Raw | ConvertFrom-Json
 } catch {
     Write-Host "Failed to parse config.json: $($_.Exception.Message)" -ForegroundColor Red
     Pop-Location
@@ -249,10 +303,8 @@ try {
 }
 
 if (-not $configData.availableVersions -or $configData.availableVersions.Count -eq 0) {
-    Write-Host "config.json has no availableVersions entries" -ForegroundColor Red
-    Pop-Location
-    exit 1
-}
+    Write-Host "config.json has no availableVersions entries (skipping manifest generation)" -ForegroundColor Yellow
+} else {
 
 $configUpdated = $false
 $skippedSHAVersions = New-Object System.Collections.Generic.List[string]
@@ -303,6 +355,7 @@ if ($configUpdated) {
 if ($skippedSHAVersions.Count -gt 0) {
     Write-Host "SHA manifests skipped for versions: $([string]::Join(', ', $skippedSHAVersions))" -ForegroundColor Yellow
 }
+}
 
 Write-Host "Generating icon file..." -ForegroundColor Yellow
 go run .\cmd\iconify\main.go -in icon.png -out $icoPath
@@ -325,14 +378,35 @@ try {
 }
 
 $buildTimeUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-$ldflags = "-s -w -buildid= -H windowsgui -X gorgeous-installer/internal/buildinfo.CommitSHA=$gitCommit -X gorgeous-installer/internal/buildinfo.BuildTime=$buildTimeUtc"
+$buildInfoDirectory = Join-Path $scriptDir "internal\\buildinfo"
+$buildInfoPath = Join-Path $buildInfoDirectory "buildinfo.go"
+New-Item -ItemType Directory -Path $buildInfoDirectory -Force | Out-Null
+$buildInfoSource = @"
+// Code generated by build.ps1. DO NOT EDIT.
+package buildinfo
 
-$winresObject = Get-Content "winres.json" -Raw | ConvertFrom-Json -AsHashtable
-$versionInfo = $winresObject["RT_VERSION"]["#1"]["0000"]["info"]["0409"]
-$versionInfo["Comments"] = "Commit $gitCommit"
-$versionInfo["PrivateBuild"] = $gitCommit
-$versionInfo["SpecialBuild"] = $buildTimeUtc
-$winresObject | ConvertTo-Json -Depth 20 | Set-Content -Path $generatedWinresPath -Encoding UTF8
+const (
+    Version   = "1.0.0"
+    GitCommit = "$gitCommit"
+    BuildTime = "$buildTimeUtc"
+    Platform  = "Windows_amd64"
+)
+
+func Summary() string {
+    return "Gorgeous Installer " + Version + " (" + Platform + ") - " + GitCommit + " @ " + BuildTime
+}
+"@
+[System.IO.File]::WriteAllText($buildInfoPath, $buildInfoSource, [System.Text.UTF8Encoding]::new($false))
+
+$ldflags = "-s -w -buildid= -H windowsgui"
+
+$winresObject = Get-Content "winres.json" -Raw | ConvertFrom-Json
+$versionInfo = $winresObject.RT_VERSION."#1"."0000".info."0409"
+$versionInfo | Add-Member -NotePropertyName "Comments" -NotePropertyValue "Commit $gitCommit" -Force
+$versionInfo | Add-Member -NotePropertyName "PrivateBuild" -NotePropertyValue $gitCommit -Force
+$versionInfo | Add-Member -NotePropertyName "SpecialBuild" -NotePropertyValue $buildTimeUtc -Force
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($generatedWinresPath, ($winresObject | ConvertTo-Json -Depth 20), $utf8NoBom)
 
 go build -trimpath -ldflags $ldflags -o $exePath ./cmd/main
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exePath)) {
@@ -367,11 +441,11 @@ if ($UseUPX -or -not $SkipUPX) {
         Write-Host "UPX compression completed" -ForegroundColor Green
     } else {
         if ($UseUPX) {
-            Write-Host "UPX was requested but could not be resolved or downloaded" -ForegroundColor Red
+            Write-Host "UPX was requested but not found in PATH" -ForegroundColor Red
             Pop-Location
             exit 1
         }
-        Write-Host "UPX not found and auto-download failed; build continues uncompressed." -ForegroundColor Yellow
+        Write-Host "UPX not found in PATH; build continues uncompressed (install UPX or use -UseUPX for strict mode)" -ForegroundColor Yellow
     }
 }
 
@@ -469,3 +543,4 @@ if ($Run) {
 }
 
 Pop-Location
+exit 0
