@@ -10,3 +10,4 @@ winres.generated.json
 !config.json
 !packs/
 /internal/buildinfo/buildinfo.go
+/internal/buildinfo/buildinfo.go
