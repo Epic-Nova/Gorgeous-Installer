@@ -2,12 +2,12 @@
 package buildinfo
 
 const (
-    Version   = "1.0.0"
-    GitCommit = "8d0a315"
-    BuildTime = "2026-06-23T03:43:38Z"
-    Platform  = "Linux_x86_64"
+	Version   = "1.0.0"
+	GitCommit = "8d0a315"
+	BuildTime = "2026-06-23T03:43:38Z"
+	Platform  = "Linux_x86_64"
 )
 
 func Summary() string {
-    return "Gorgeous Installer " + Version + " (" + Platform + ") - " + GitCommit + " @ " + BuildTime
+	return "Gorgeous Installer " + Version + " (" + Platform + ") - " + GitCommit + " @ " + BuildTime
 }

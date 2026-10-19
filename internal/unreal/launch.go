@@ -34,11 +34,11 @@ func LaunchUnrealEditor(projectPath string) error {
 	}
 
 	cmd := exec.Command(editorExe, absPath, "-BypassGorgeousHook")
-	
+
 	// Start the process detached so it survives the installer closing
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start editor process: %w", err)
 	}
-	
+
 	return nil
 }

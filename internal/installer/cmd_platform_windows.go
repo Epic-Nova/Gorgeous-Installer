@@ -7,6 +7,8 @@ import (
 	"syscall"
 )
 
+const STILL_ACTIVE = 0x00000103
+
 func configureCommandForPlatform(cmd *exec.Cmd) {
 	if cmd == nil {
 		return
@@ -31,5 +33,5 @@ func isProcessRunning(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return exitCode == syscall.STILL_ACTIVE
+	return exitCode == STILL_ACTIVE
 }

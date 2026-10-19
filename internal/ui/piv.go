@@ -45,13 +45,15 @@ func (g *GUIApp) performPIVSign(win fyne.Window, challenge string, appendStatus 
 	}
 
 	var yk *piv.YubiKey
+	var ykErr error
 	for i := 0; i < 3; i++ {
-		yk, err = piv.Open(cards[0])
-		if err == nil {
+		yk, ykErr = piv.Open(cards[0])
+		if ykErr == nil {
 			break
 		}
 		time.Sleep(1 * time.Second)
 	}
+	err = ykErr
 
 	if err != nil {
 		killChan := make(chan bool)
@@ -70,7 +72,8 @@ func (g *GUIApp) performPIVSign(win fyne.Window, challenge string, appendStatus 
 				exec.Command("killall", "gpg-agent").Run()
 			}
 			time.Sleep(2 * time.Second)
-			yk, err = piv.Open(cards[0])
+			yk, ykErr = piv.Open(cards[0])
+			err = ykErr
 		}
 
 		if err != nil {

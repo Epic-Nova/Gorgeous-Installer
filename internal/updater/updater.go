@@ -101,25 +101,25 @@ func PerformUpdate(binPath string, installedNatively bool) error {
 	}
 
 	zipPath := filepath.Join(os.TempDir(), "gorgeous-installer-update.zip")
-	
+
 	// Download ZIP payload
 	out, err := os.Create(zipPath)
 	if err != nil {
 		return err
 	}
-	
+
 	httpResp, err := http.Get(resp.DownloadUrl)
 	if err != nil {
 		out.Close()
 		return err
 	}
 	defer httpResp.Body.Close()
-	
+
 	if httpResp.StatusCode >= 400 {
 		out.Close()
 		return fmt.Errorf("failed to download update: %s", httpResp.Status)
 	}
-	
+
 	if _, err = io.Copy(out, httpResp.Body); err != nil {
 		out.Close()
 		return err

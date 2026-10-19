@@ -40,11 +40,11 @@ func RecreateMissingManifests(projectPath string) {
 			continue
 		}
 
-		// To avoid deep scanning the entire plugin repeatedly, we assume the manifest 
+		// To avoid deep scanning the entire plugin repeatedly, we assume the manifest
 		// should be placed in the preferred payload path. If it's not there, we'll just write it.
 		// A more robust approach would be to cache all SystemManifest.json files in the project.
 		// For now, let's check the preferred payload path directly.
-		
+
 		var targetFolder string
 		if len(sys.SourcePaths) > 0 {
 			targetFolder = filepath.Join(pluginPath, sys.SourcePaths[0])
@@ -56,7 +56,7 @@ func RecreateMissingManifests(projectPath string) {
 
 		manifestPath := filepath.Join(targetFolder, "SystemManifest.json")
 		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-			
+
 			// Recreate PayloadPaths from SourcePaths and ContentPaths
 			var payloadPaths []string
 			payloadPaths = append(payloadPaths, sys.SourcePaths...)

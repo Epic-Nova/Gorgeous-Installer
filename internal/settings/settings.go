@@ -11,14 +11,14 @@ import (
 
 // AppSettings holds the persistent configuration for the Gorgeous Installer.
 type AppSettings struct {
-	SearchPaths       []string `json:"searchPaths"`
-	LocalBinPath      string   `json:"localBinPath"`
-	InstalledNatively     bool     `json:"installedNatively"`
-	UprojectAssociated    bool     `json:"uprojectAssociated"`
-	PrevUprojectCommand   string   `json:"prevUprojectCommand"`
-	DevMode               bool     `json:"devMode"`
-	BinDevMode            bool     `json:"binDevMode"`
-	ForceHTTP             bool     `json:"forceHTTP"`
+	SearchPaths         []string `json:"searchPaths"`
+	LocalBinPath        string   `json:"localBinPath"`
+	InstalledNatively   bool     `json:"installedNatively"`
+	UprojectAssociated  bool     `json:"uprojectAssociated"`
+	PrevUprojectCommand string   `json:"prevUprojectCommand"`
+	DevMode             bool     `json:"devMode"`
+	BinDevMode          bool     `json:"binDevMode"`
+	ForceHTTP           bool     `json:"forceHTTP"`
 }
 
 // ConfigFilePath returns the path to the settings JSON file.
@@ -45,8 +45,8 @@ func DefaultSettings() *AppSettings {
 		}
 	}
 	return &AppSettings{
-		SearchPaths:       []string{},
-		LocalBinPath:      localBin,
+		SearchPaths:         []string{},
+		LocalBinPath:        localBin,
 		InstalledNatively:   false,
 		UprojectAssociated:  false,
 		PrevUprojectCommand: "",
@@ -146,4 +146,3 @@ func ErrorFilePath() (string, error) {
 	}
 	return filepath.Join(cfgDir, "GorgeousThings", "update_error.txt"), nil
 }
-

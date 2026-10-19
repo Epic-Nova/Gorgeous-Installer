@@ -15,7 +15,7 @@ type GUIApp struct {
 }
 
 // NewGUIApp creates a new GUI app instance.
-func NewGUIApp(cfg *config.Config, recompileOnly bool, waitPid int, reopenProject bool, autoBuildProject bool, verifyCompat bool) *GUIApp {
+func NewGUIApp(cfg *config.Config, recompileOnly bool, waitPid int, reopenProject bool, autoBuildProject bool, verifyCompat bool, installZip string, regenerateProject bool) *GUIApp {
 	return &GUIApp{config: cfg}
 }
 

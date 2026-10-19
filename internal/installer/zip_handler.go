@@ -26,6 +26,14 @@ type UpdateManifest struct {
 	Instructions []UpdateInstruction `json:"Instructions"`
 }
 
+// TODO: Introduce an incremental patching editor UI to automatically generate
+// UpdateInstructions.json for differential updates. This would allow:
+// - Visual mapping of file actions (UPDATE, DELETE, INSTALL, REPAIR)
+// - Automatic diff detection between pack versions
+// - Hotfix distribution without full pack rebuilds
+// Currently, offline publisher creates full packs; differential patches require
+// manual UpdateInstructions.json creation.
+
 func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 	if pidToWait > 0 {
 		fmt.Printf("Waiting for Unreal Editor (PID: %d) to close gracefully...\n", pidToWait)
@@ -47,11 +55,49 @@ func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 		return fmt.Errorf("failed to extract zip: %w", err)
 	}
 
-	manifestPath := filepath.Join(tempDir, "UpdateInstructions.json")
-	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-		return fmt.Errorf("UpdateInstructions.json not found in zip")
+	// Try to read config.json for plugin name
+	var pluginName string
+	configPath := filepath.Join(tempDir, "config.json")
+	if configData, err := os.ReadFile(configPath); err == nil {
+		var cfg config.Config
+		if json.Unmarshal(configData, &cfg) == nil && cfg.PluginName != "" {
+			pluginName = cfg.PluginName
+		}
 	}
 
+	// Fallback to UpdateInstructions.json if config.json not found or missing PluginName
+	if pluginName == "" {
+		manifestPath := filepath.Join(tempDir, "UpdateInstructions.json")
+		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+			return fmt.Errorf("UpdateInstructions.json not found in zip")
+		}
+
+		manifestData, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return fmt.Errorf("failed to read UpdateInstructions.json: %w", err)
+		}
+
+		var manifest UpdateManifest
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
+			return fmt.Errorf("failed to parse UpdateInstructions.json: %w", err)
+		}
+		pluginName = manifest.PluginName
+	}
+
+	// Resolve the plugin directory
+	version, enginePath, err := unreal.GetEngineVersionFromProject(projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to locate project/engine: %w", err)
+	}
+	_ = version
+
+	pluginPath, err := unreal.LocatePluginByName(projectPath, enginePath, pluginName)
+	if err != nil {
+		return fmt.Errorf("failed to locate plugin %s: %w", pluginName, err)
+	}
+
+	// Read UpdateInstructions.json for update instructions
+	manifestPath := filepath.Join(tempDir, "UpdateInstructions.json")
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return fmt.Errorf("failed to read UpdateInstructions.json: %w", err)
@@ -62,19 +108,7 @@ func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 		return fmt.Errorf("failed to parse UpdateInstructions.json: %w", err)
 	}
 
-	// Resolve the plugin directory
-	version, enginePath, err := unreal.GetEngineVersionFromProject(projectPath)
-	if err != nil {
-		return fmt.Errorf("failed to locate project/engine: %w", err)
-	}
-	_ = version
-
-	pluginPath, err := unreal.LocatePluginByName(projectPath, enginePath, manifest.PluginName)
-	if err != nil {
-		return fmt.Errorf("failed to locate plugin %s: %w", manifest.PluginName, err)
-	}
-
-	fmt.Printf("Applying updates to %s at %s\n", manifest.PluginName, pluginPath)
+	fmt.Printf("Applying updates to %s at %s\n", pluginName, pluginPath)
 
 	for _, inst := range manifest.Instructions {
 		targetAbs := filepath.Join(pluginPath, filepath.FromSlash(inst.Target))
@@ -96,14 +130,45 @@ func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 
 	fmt.Println("Updates applied successfully! Initiating recompilation...")
 
-	// Launch Recompile — pass a zero-value PackVersion so NewInstaller gets a valid pointer.
-	dummyVersion := &config.PackVersion{}
-	inst := NewInstaller(pluginPath, "code", dummyVersion, pluginPath, projectPath, enginePath)
+	clearVerifiedBinaryChecksums(projectPath, pluginName)
+
+	inst := NewInstaller(pluginPath, "", nil, "", projectPath, enginePath)
 	inst.RecompileOnly = true
 	inst.StatusLogger = func(msg string, args ...any) {
 		fmt.Printf("[Compile] "+msg+"\n", args...)
 	}
 	return inst.Install()
+}
+
+func clearVerifiedBinaryChecksums(projectPath, pluginName string) {
+	persistentDataPath := filepath.Join(projectPath, "Saved", "GorgeousThings", "GorgeousPersistentData.json")
+	data, err := os.ReadFile(persistentDataPath)
+	if err != nil {
+		return
+	}
+
+	var persistentData map[string]interface{}
+	if err := json.Unmarshal(data, &persistentData); err != nil {
+		return
+	}
+
+	verifiedChecksums, ok := persistentData["VerifiedBinaryChecksums"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	if pluginName != "" {
+		delete(verifiedChecksums, pluginName)
+	} else {
+		persistentData["VerifiedBinaryChecksums"] = make(map[string]interface{})
+	}
+
+	updatedData, err := json.MarshalIndent(persistentData, "", "\t")
+	if err != nil {
+		return
+	}
+
+	os.WriteFile(persistentDataPath, updatedData, 0644)
 }
 
 func checkProcessAlive(pid int) error {
