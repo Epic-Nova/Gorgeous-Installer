@@ -961,6 +961,8 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 	manageSection := g.buildManageContentSection(win, appendStatus)
 	manageSection.Hide()
+	exampleSection := g.buildExamplePublisherPanel(win, appendStatus)
+	exampleSection.Hide()
 
 	var changelogSection, pluginInfoSection fyne.CanvasObject
 
@@ -984,12 +986,24 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 		}
 	}
 
-	modeSelector := widget.NewRadioGroup([]string{"Pack Update", "Installer Update", "Plugin Update", "Manage Content"}, func(s string) {
+	modeSelector := widget.NewRadioGroup([]string{"Pack Update", "Installer Update", "Plugin Update", "Manage Content", "Examples"}, func(s string) {
 		if publishMode != s {
 			clearState()
 		}
 		publishMode = s
-		if s == "Manage Content" {
+		exampleSection.Hide()
+		if s == "Examples" {
+			infoSection.Hide()
+			pluginInfoSection.Hide()
+			installerSection.Hide()
+			changelogSection.Hide()
+			publishBtn.Hide()
+			if offlinePublishBtn != nil {
+				offlinePublishBtn.Hide()
+			}
+			manageSection.Hide()
+			exampleSection.Show()
+		} else if s == "Manage Content" {
 			infoSection.Hide()
 			pluginInfoSection.Hide()
 			installerSection.Hide()
@@ -1074,6 +1088,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 
 	leftPanel := container.NewVScroll(container.NewVBox(
 		modeSection,
+		exampleSection,
 		manageSection,
 		installerSection,
 		infoSection,

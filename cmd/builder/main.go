@@ -13,7 +13,7 @@ import (
 
 func main() {
 	packName := flag.String("pack", "", "Pack name (e.g., 'MyContentPack')")
-	packType := flag.String("type", "content", "Pack type: content or code")
+	packType := flag.String("type", "content", "Pack type: content, code, hybrid, content-example, or project-example")
 	packPath := flag.String("path", "", "Path to content/code pack directory")
 	outputDir := flag.String("output", ".", "Output directory for config.json")
 	version := flag.String("version", "1.0", "Pack version")

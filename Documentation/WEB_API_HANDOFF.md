@@ -169,3 +169,18 @@ Please acknowledge these requirements and generate the corresponding Laravel arc
 2. Database migrations for `systems`, `system_versions`, and `system_hashes` (for soft licensing).
 3. Eloquent models with relationships.
 4. The API Controllers implementing the outlined logic and returning the exact JSON structures defined here.
+
+## Standalone Example Installer Downloads
+
+Embedded installer configs now distinguish `packType: "content-example"` from
+`packType: "project-example"`. The former asks for an existing .uproject and copies
+payload contents into PROJECT/Content; the latter asks for an empty destination and
+copies a full project, including its root .uproject. Existing `content`, `code`, and
+`hybrid` plugin packs retain their meaning. Each example config carries the normal
+`availableVersions` array and optional SHA manifest references.
+
+Use Publisher > Examples to build versioned standalone downloads. Content payloads
+contain the contents of Content, without the Content wrapper. Full project payloads
+contain exactly one root .uproject. The website should label these two download kinds
+clearly and distribute the built executable. This change does not add a website API
+release type or teach the plugin ZIP-update endpoint to install examples.

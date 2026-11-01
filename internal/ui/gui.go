@@ -690,6 +690,9 @@ func (g *GUIApp) Run() {
 	projectEntry := widget.NewEntry()
 	projectEntry.SetPlaceHolder("Select a .uproject file…")
 	projectEntry.Disable()
+	if g.config.PackType == "project-example" {
+		projectEntry.SetPlaceHolder("Select an empty destination folder…")
+	}
 
 	loadProject := func(selected string) {
 		projectPath = selected
@@ -699,7 +702,21 @@ func (g *GUIApp) Run() {
 		projectEntry.Disable()
 		appendStatus("Project selected: %s", filepath.Base(projectPath))
 
-		engineVersion, enginePath, detectErr := unreal.GetEngineVersionFromProject(projectPath)
+		if g.config.PackType == "project-example" {
+			autoPackVersion = ""
+			manualVersionSel = true
+			if len(versions) > 0 && versionSelect.Selected == "" {
+				versionSelect.SetSelected(versions[0])
+			}
+			versionSelectRow.Show()
+			setCanvasText(engineVal, "Select packaged version")
+			if refreshPlanState != nil {
+				refreshPlanState()
+			}
+			return
+		}
+
+		engineVersion, enginePath, detectErr := g.getInstallEngineVersion(projectPath)
 		if detectErr != nil {
 			autoPackVersion = ""
 			manualVersionSel = true
@@ -853,6 +870,10 @@ func (g *GUIApp) Run() {
 
 	// ── Install flow (wired to actionBtn.onTap) ───────────────────────────────
 	doInstall := func() {
+		if projectPath == "" && g.config.PackType == "project-example" {
+			g.showAnimatedDialog("Error", "please select an empty destination folder first", true)
+			return
+		}
 		if projectPath == "" {
 			found := findUProjectUpwards()
 			if found != "" {
@@ -982,6 +1003,18 @@ func (g *GUIApp) Run() {
 
 	// ── Browse button ─────────────────────────────────────────────────────────
 	browseBtn := widget.NewButtonWithIcon("Browse", theme.FolderOpenIcon(), func() {
+		if g.config.PackType == "project-example" {
+			dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+				if err != nil {
+					g.showAnimatedDialog("Error", err.Error(), true)
+					return
+				}
+				if uri != nil {
+					loadProject(normalizeURIPath(uri))
+				}
+			}, win)
+			return
+		}
 		d := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err != nil {
 				g.showAnimatedDialog("Error", err.Error(), true)
@@ -1185,7 +1218,7 @@ func (g *GUIApp) Run() {
 	})
 
 	// ── Pre-fill project (verify-compatibility mode) ──────────────────────────
-	if g.ProjectPath == "" {
+	if g.ProjectPath == "" && g.config.PackType != "project-example" {
 		g.ProjectPath = findUProjectUpwards()
 	}
 	appendStatus("ProjectPath: %s, RegenerateProject: %v, recompileOnly: %v", g.ProjectPath, g.RegenerateProject, g.recompileOnly)
@@ -1594,7 +1627,15 @@ func (g *GUIApp) buildPackPanel(
 		newGTValueLabel(g.config.PluginName),
 	)
 
-	projectSection := newGTCard("Project", "Select your .uproject file",
+	subtitle := "Select your .uproject file"
+	if g.config.PackType == "content-example" {
+		subtitle = "Content Example: select a .uproject to install into its Content folder"
+		engineRow = container.NewHBox(newGTLabel("Engine:"), engineVal, layout.NewSpacer(), newGTLabel("Target: Project / Content"))
+	} else if g.config.PackType == "project-example" {
+		subtitle = "Full Project Example: select an empty folder and a packaged UE version"
+		engineRow = container.NewHBox(newGTLabel("Target: New example project"))
+	}
+	projectSection := newGTCard("Project", subtitle,
 		container.NewVBox(
 			container.NewBorder(nil, nil, nil, browseBtn, projectEntry),
 			engineRow,
@@ -2520,7 +2561,7 @@ func (g *GUIApp) inspectInstallPlan(projectPath, selectedVersion string) (*insta
 	if err != nil {
 		return nil, err
 	}
-	_, enginePath, detectErr := unreal.GetEngineVersionFromProject(projectPath)
+	_, enginePath, detectErr := g.getInstallEngineVersion(projectPath)
 	if detectErr != nil {
 		enginePath = ""
 	}
@@ -2528,7 +2569,10 @@ func (g *GUIApp) inspectInstallPlan(projectPath, selectedVersion string) (*insta
 	if pluginNameForSearch == "" {
 		pluginNameForSearch = g.config.PackName
 	}
-	pluginPath, err := unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, pluginNameForSearch)
+	pluginPath := ""
+	if !config.IsExamplePack(g.config.PackType) {
+		pluginPath, err = unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, pluginNameForSearch)
+	}
 	if err != nil {
 		if g.config.PackType == "hybrid" {
 			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", "GorgeousThings", pluginNameForSearch)
@@ -2549,7 +2593,7 @@ func (g *GUIApp) performInstall(ctx context.Context, projectPath, selectedVersio
 	}
 	appendStatus("Resolving engine and plugin paths")
 
-	_, enginePath, detectErr := unreal.GetEngineVersionFromProject(projectPath)
+	_, enginePath, detectErr := g.getInstallEngineVersion(projectPath)
 	if detectErr != nil {
 		appendStatus("Engine detection failed for plugin lookup fallback: %v", detectErr)
 	}
@@ -2561,7 +2605,11 @@ func (g *GUIApp) performInstall(ctx context.Context, projectPath, selectedVersio
 	if pluginNameForSearch == "" {
 		pluginNameForSearch = g.config.PackName
 	}
-	pluginPath, err := unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, pluginNameForSearch)
+	pluginPath := ""
+	var err error
+	if !config.IsExamplePack(g.config.PackType) {
+		pluginPath, err = unreal.LocatePluginByName(filepath.Dir(projectPath), enginePath, pluginNameForSearch)
+	}
 	if err != nil {
 		if g.config.PackType == "hybrid" {
 			// Fallback: This might be a brand new plugin installation.
@@ -3490,4 +3538,11 @@ func (g *GUIApp) playUpdateSequence(win fyne.Window, iconRes fyne.Resource) func
 			layoutUpdate(86, ring.Size().Width)
 		})
 	}
+}
+
+func (g *GUIApp) getInstallEngineVersion(projectPath string) (string, string, error) {
+	if config.IsExamplePack(g.config.PackType) {
+		return unreal.GetExampleEngineVersion(projectPath)
+	}
+	return unreal.GetEngineVersionFromProject(projectPath)
 }

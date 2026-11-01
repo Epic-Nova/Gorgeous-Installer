@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"gorgeous-installer/internal/config"
+	"gorgeous-installer/internal/installer"
 )
 
 type versionEntry struct {
@@ -67,6 +68,23 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string,
 }
 
 func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions []versionEntry, installerPath string, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
+	isExample := publishMode == "Content Example" || publishMode == "Project Example"
+	if isExample {
+		packType := "content-example"
+		if publishMode == "Project Example" {
+			packType = "project-example"
+		}
+		if manifest == nil || len(versions) == 0 {
+			fyne.Do(func() { dialog.ShowError(fmt.Errorf("example name and version mappings are required"), win) })
+			return
+		}
+		for _, v := range versions {
+			if err := installer.ValidateExamplePayload(packType, v.sourcePath); err != nil {
+				fyne.Do(func() { dialog.ShowError(fmt.Errorf("UE %s: %w", v.ueVer, err), win) })
+				return
+			}
+		}
+	}
 	var manifestID string
 	var manifestName string
 
@@ -117,6 +135,11 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		})
 	}
 
+	defer fyne.Do(func() {
+		if progress != nil {
+			progress.Hide()
+		}
+	})
 	updateStatus("Starting offline publish build for %s", manifestName)
 
 	if publishMode == "Installer Update" {
@@ -214,6 +237,9 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 			// For Installer updates, we don't need a manifest file on disk. We just use the provided one.
 			localManifest = *manifest
 			localManifest.PayloadPaths = []string{"."}
+		} else if publishMode == "Content Example" || publishMode == "Project Example" {
+			localManifest = *manifest
+			localManifest.PayloadPaths = []string{"."}
 		} else if publishMode == "Plugin Update" {
 			// For Plugin Updates, we also don't use SystemManifest.json. We use the whole directory.
 			localManifest = *manifest
@@ -247,6 +273,10 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 				break
 			}
 			vPluginRoot = parent
+		}
+
+		if publishMode == "Content Example" || publishMode == "Project Example" {
+			vPluginRoot = v.sourcePath
 		}
 
 		var pathsToCopy []string
@@ -334,7 +364,8 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 
 		shaFilePath := filepath.Join(packsDir, fmt.Sprintf("%s.sha256", packName))
 		if err := generateSHA256Manifest(packPath, shaFilePath); err != nil {
-			updateStatus("Warning: failed to generate SHA manifest for %s: %v", packName, err)
+			updateStatus("Failed to generate SHA manifest for %s: %v", packName, err)
+			return
 		}
 
 		availVersions = append(availVersions, config.PackVersion{
@@ -350,8 +381,19 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		PluginName:        actualPluginName,
 		AvailableVersions: availVersions,
 	}
+	if publishMode == "Content Example" {
+		cfg.PackType = "content-example"
+		cfg.PluginName = ""
+		cfg.InstallPath = "Content"
+	} else if publishMode == "Project Example" {
+		cfg.PackType = "project-example"
+		cfg.PluginName = ""
+	}
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
-	os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
+	if err := os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644); err != nil {
+		updateStatus("Failed to write installer config: %v", err)
+		return
+	}
 
 	// Installer Update bypass is handled at the beginning of the function
 
@@ -360,12 +402,14 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	cmdBuild.Dir = tempDir
 	if out, err := cmdBuild.CombinedOutput(); err != nil {
 		updateStatus("Build failed: %v\n%s", err, string(out))
+		return
 	} else {
 		// Copy Linux binary
 		outBin := filepath.Join(outDir, fmt.Sprintf("Gorgeous-Installer-%s", manifestID))
 		srcBin := filepath.Join(tempDir, "build", "gorgeous-installer")
 		if err := copyFile(srcBin, outBin); err != nil {
 			updateStatus("Failed to copy Linux binary: %v", err)
+			return
 		} else {
 			os.Chmod(outBin, 0755)
 			updateStatus("Linux build successful!")
@@ -377,6 +421,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		if _, err := os.Stat(srcExe); err == nil {
 			if err := copyFile(srcExe, outExe); err != nil {
 				updateStatus("Failed to copy Windows binary: %v", err)
+				return
 			} else {
 				updateStatus("Windows build successful!")
 			}
@@ -389,6 +434,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	cmdCpPacks := exec.Command("cp", "-R", filepath.Join(packsDir, ".")+"/", outDir+"/")
 	if err := cmdCpPacks.Run(); err != nil {
 		updateStatus("Failed to copy packs to output directory: %v", err)
+		return
 	} else {
 		updateStatus("Packs and SHA files copied successfully.")
 	}
@@ -447,6 +493,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		cmdZipOffline.Dir = tempDir
 		if err := cmdZipOffline.Run(); err != nil {
 			updateStatus("Failed to create offline update zip: %v", err)
+			return
 		} else {
 			updateStatus("Offline update zip created: %s", offlineZip)
 		}

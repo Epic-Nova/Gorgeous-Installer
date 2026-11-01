@@ -11,7 +11,7 @@ import (
 type Config struct {
 	PackName          string        `json:"packName"`
 	PluginName        string        `json:"pluginName"`
-	PackType          string        `json:"packType"` // "content" or "code"
+	PackType          string        `json:"packType"` // content, code, hybrid, content-example, or project-example
 	InstallPath       string        `json:"installPath"`
 	AvailableVersions []PackVersion `json:"availableVersions"`
 	ContentData       []byte        `json:"-"` // Embedded content/code pack
@@ -67,4 +67,9 @@ func (c *Config) SaveConfig(filepath string) error {
 	}
 
 	return os.WriteFile(filepath, data, 0644)
+}
+
+// IsExamplePack identifies standalone examples, which never target plugin folders.
+func IsExamplePack(packType string) bool {
+	return packType == "content-example" || packType == "project-example"
 }

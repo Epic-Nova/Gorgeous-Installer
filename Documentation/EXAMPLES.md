@@ -120,3 +120,71 @@ Validate using engine-version-based selection and configured `shaFile`:
 ```powershell
 .\gorgeous-installer.exe -validate-sha -engine-version 5.6
 ```
+
+## Example 9: Install a Content Example into an Existing Project
+
+Use `packType: "content-example"` for example Blueprints and assets that belong in
+an existing project's Content directory. This is distinct from `content`, which
+continues to target a plugin's Content directory.
+
+```json
+{
+  "packName": "GorgeousLoadingScreenExample",
+  "packType": "content-example",
+  "installPath": "Content",
+  "availableVersions": [
+    { "version": "5.7", "path": "packs/5.7/example", "shaFile": "packs/5.7.sha256" },
+    { "version": "5.6", "path": "packs/5.6/example", "shaFile": "packs/5.6.sha256" }
+  ]
+}
+```
+
+The payload root contains the **contents** of Content, for example
+`GorgeousLoadingScreenExample/Maps/Demo.umap`. Do not include a surrounding
+Content folder, a .uproject, Config, Source, or Plugins. Asset paths are preserved;
+include all referenced assets and install required plugins separately. The installer
+does not migrate dependencies, enable plugins, change project settings, or compile.
+
+The user selects their .uproject, and the existing version-selection logic chooses
+the packaged payload. Standard numeric EngineAssociation values work even if the
+engine is not installed locally. Source-build associations use engine discovery;
+if unresolved, the GUI allows manual payload selection. Files go to
+`PROJECT/Content/GorgeousLoadingScreenExample/...`, without locating a plugin.
+The existing install/update/reinstall comparison applies only to payload files;
+unrelated project files are neither deleted nor replaced. Existing files at the
+same payload paths can be replaced, so use a unique example namespace.
+
+```powershell
+.\Gorgeous-Installer-GorgeousLoadingScreenExample.exe -cli -project "C:\Games\Game\Game.uproject" -version 5.7
+```
+
+## Example 10: Full Project Example
+
+Use `packType: "project-example"` for a complete project. Its payload must contain
+exactly one .uproject at the root, plus Content and any other required project files.
+The GUI offers an empty destination folder and a packaged UE version rather than
+asking for an existing .uproject. The CLI uses `-project` for that destination:
+
+```powershell
+.\Gorgeous-Installer-FullExample.exe -cli -project "C:\Examples\NewExample" -version 5.7
+```
+
+Full projects require an empty or nonexistent destination. This prevents replacing
+an existing project's configuration; updating/reinstalling into a populated folder
+is intentionally rejected. Files are copied without invoking UnrealBuildTool.
+
+## Build Example Installers in the Publisher UI
+
+1. Open Publisher and select **Examples**.
+2. Enter a filesystem-safe example name and choose **Content Example** or **Project Example**.
+3. Map each UE version to its source folder. For Content Example, select Content
+   itself (its contents are packaged); for Project Example, select the project root.
+4. Choose **Build standalone installers** and select an output directory.
+
+This uses the existing offline build pipeline, embedding all versioned payloads and
+writing SHA manifests. Content examples do not need SystemManifest.json or a .uplugin.
+The builder clones the repository's default branch, so deploy the example support
+there before building download installers. Existing build prerequisites apply,
+including Bash/Go and the Windows cross-compilation toolchain for .exe output.
+The website can distribute the resulting standalone executable; website/API changes
+and release binaries are separate from this installer-source change.
