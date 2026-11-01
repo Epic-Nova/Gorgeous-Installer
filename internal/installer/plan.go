@@ -72,6 +72,9 @@ func (i *Installer) BuildInstallPlan() (*InstallPlan, error) {
 		return nil, fmt.Errorf("pack path contains no files: %s", sourceRoot)
 	}
 
+	if err := validateExampleFiles(i.PackType, sourceFiles); err != nil {
+		return nil, err
+	}
 	plan := &InstallPlan{
 		PackType:         i.PackType,
 		PackVersion:      i.PackVersion.Version,
@@ -134,6 +137,26 @@ func (i *Installer) BuildInstallPlan() (*InstallPlan, error) {
 
 func (i *Installer) resolveDestinationRootForPackType() (string, error) {
 	switch strings.ToLower(strings.TrimSpace(i.PackType)) {
+	case "content-example":
+		projectFile, err := resolveProjectFilePath(i.ProjectPath)
+		if err != nil {
+			return "", err
+		}
+		return i.resolveInstallDir(filepath.Join(filepath.Dir(projectFile), "Content"), "content")
+	case "project-example":
+		target, err := filepath.Abs(i.ProjectPath)
+		if err != nil || strings.TrimSpace(i.ProjectPath) == "" {
+			return "", fmt.Errorf("example destination directory is required")
+		}
+		if strings.EqualFold(filepath.Ext(target), ".uproject") {
+			return "", fmt.Errorf("full project examples require a destination directory, not an existing .uproject")
+		}
+		if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
+			return "", fmt.Errorf("full project examples require an empty destination directory")
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		return target, nil
 	case "content":
 		contentRoot := filepath.Join(i.PluginPath, "Content")
 		return i.resolveInstallDir(contentRoot, "content")
@@ -368,5 +391,36 @@ func copyPackFiles(sourceRoot, destinationRoot string, relFiles []string) error 
 		}
 	}
 
+	return nil
+}
+
+// ValidateExamplePayload checks example layout before packaging or installation.
+func ValidateExamplePayload(packType, root string) error {
+	files, err := listPackFiles(root)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return fmt.Errorf("example payload contains no files")
+	}
+	return validateExampleFiles(packType, files)
+}
+
+func validateExampleFiles(packType string, files []string) error {
+	projectFiles := 0
+	for _, rel := range files {
+		first := strings.Split(filepath.ToSlash(rel), "/")[0]
+		if packType == "content-example" {
+			if strings.EqualFold(first, "Content") || strings.EqualFold(first, "Config") || strings.EqualFold(first, "Plugins") || strings.EqualFold(first, "Source") || strings.EqualFold(filepath.Ext(rel), ".uproject") {
+				return fmt.Errorf("content-example payload must contain the contents of Content, without a Content wrapper or project files: %s", rel)
+			}
+		}
+		if packType == "project-example" && !strings.Contains(filepath.ToSlash(rel), "/") && strings.EqualFold(filepath.Ext(rel), ".uproject") {
+			projectFiles++
+		}
+	}
+	if packType == "project-example" && projectFiles != 1 {
+		return fmt.Errorf("project-example payload must contain exactly one root .uproject file")
+	}
 	return nil
 }

@@ -38,7 +38,7 @@ func main() {
 	cliMode := flag.Bool("cli", false, "Run in CLI mode")
 	guiMode := flag.Bool("gui", false, "Run in GUI mode")
 	projectPath := flag.String("project", "", "Path to .uproject file or project directory")
-	packType := flag.String("type", "", "Pack type: content or code")
+	packType := flag.String("type", "", "Pack type: content, code, hybrid, content-example, or project-example")
 	packVersion := flag.String("version", "", "Pack version to install or validate")
 	engineVersion := flag.String("engine-version", "", "Engine version used for pack selection (for install or SHA validation)")
 	installAction := flag.String("action", "", "Install action: install, update, or reinstall")
@@ -88,7 +88,7 @@ func main() {
 		opts.ProjectPath = strings.TrimSpace(flag.Arg(0))
 	}
 
-	if opts.ProjectPath != "" {
+	if opts.ProjectPath != "" && !config.IsExamplePack(cfg.PackType) && !config.IsExamplePack(opts.PackType) {
 		unreal.RecreateMissingManifests(opts.ProjectPath)
 	}
 
@@ -120,9 +120,15 @@ func main() {
 		return
 	}
 
+	// Opening a packaged example with a project should show its install UI.
+	if config.IsExamplePack(cfg.PackType) && opts.ProjectPath != "" && opts.PackType == "" && opts.PackVersion == "" && opts.EngineVersion == "" && opts.InstallAction == "" {
+		runGUIMode(cfg, opts)
+		return
+	}
+
 	// Double-click or open-with behavior: if the only arg is a .uproject file
 	if opts.ProjectPath != "" && strings.HasSuffix(strings.ToLower(opts.ProjectPath), ".uproject") &&
-		opts.PackType == "" && opts.InstallAction == "" && !opts.RecompileOnly && !opts.VerifyCompatibility {
+		!config.IsExamplePack(cfg.PackType) && opts.PackType == "" && opts.InstallAction == "" && !opts.RecompileOnly && !opts.VerifyCompatibility {
 
 		if unreal.CheckProjectBinaries(opts.ProjectPath) {
 			// Binaries exist, launch project and exit silently
@@ -221,7 +227,21 @@ func runCLIInstall(cfg *config.Config, opts cliOptions) {
 	}
 
 	// Determine UE version from uproject
-	ueVersion, enginePath, err := unreal.GetEngineVersionFromProject(absPath)
+	var ueVersion, enginePath string
+	if config.IsExamplePack(packType) {
+		ueVersion, enginePath, err = unreal.GetExampleEngineVersion(absPath)
+	} else {
+		ueVersion, enginePath, err = unreal.GetEngineVersionFromProject(absPath)
+	}
+	if err != nil && config.IsExamplePack(packType) {
+		if opts.EngineVersion != "" {
+			ueVersion = opts.EngineVersion
+			err = nil
+		} else if opts.PackVersion != "" {
+			ueVersion = opts.PackVersion
+			err = nil
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to determine engine version: %v\n", err)
 		os.Exit(1)
@@ -255,7 +275,10 @@ func runCLIInstall(cfg *config.Config, opts cliOptions) {
 		projectRoot = filepath.Dir(projectRoot)
 	}
 
-	pluginPath, err := unreal.LocatePluginByName(projectRoot, enginePath, cfg.PluginName)
+	pluginPath := ""
+	if !config.IsExamplePack(packType) {
+		pluginPath, err = unreal.LocatePluginByName(projectRoot, enginePath, cfg.PluginName)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to locate plugin %q: %v\n", cfg.PluginName, err)
 		os.Exit(1)
