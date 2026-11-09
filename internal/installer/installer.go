@@ -125,7 +125,7 @@ func (i *Installer) Install() error {
 	}
 
 	switch i.PackType {
-	case "content":
+	case "content", "content-example", "project-example":
 		return i.installContentPack()
 	case "code":
 		return i.installCodePack()
