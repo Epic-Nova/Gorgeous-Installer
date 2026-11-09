@@ -68,12 +68,12 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string,
 }
 
 func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions []versionEntry, installerPath string, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
-	isExample := publishMode == "Content Example" || publishMode == "Project Example"
+	isExample := publishMode == "Content Example" || publishMode == "Project Example" || publishMode == "Game Feature Plugin"
 	if isExample {
 		packType := "content-example"
 		if publishMode == "Project Example" {
 			packType = "project-example"
-		}
+		} else if publishMode == "Game Feature Plugin" { packType = "game-feature-example" }
 		if manifest == nil || len(versions) == 0 {
 			fyne.Do(func() { dialog.ShowError(fmt.Errorf("example name and version mappings are required"), win) })
 			return
@@ -388,7 +388,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 	} else if publishMode == "Project Example" {
 		cfg.PackType = "project-example"
 		cfg.PluginName = ""
-	}
+	} else if publishMode == "Game Feature Plugin" { cfg.PackType = "game-feature-example"; cfg.PluginName = "" }
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 	if err := os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644); err != nil {
 		updateStatus("Failed to write installer config: %v", err)
