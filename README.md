@@ -18,7 +18,15 @@
 
 ---
 
-## One installer. Different ways to build.
+<div align="center">
+
+![Gorgeous Installer desktop preview](.github/installer-preview.svg)
+
+*Interface preview placeholder. Replace with a real application screenshot when available.*
+
+</div>
+
+## ✨ One installer. Different ways to build.
 
 Gorgeous Installer helps Unreal Engine developers install versioned content and code packs, validate package integrity, and publish standalone installers. Built with **Go + Fyne**, it provides a native GUI and CLI without requiring Gorgeous Core in the target project for standalone examples.
 
@@ -28,7 +36,19 @@ Gorgeous Installer helps Unreal Engine developers install versioned content and 
 | Install, update, or reinstall changed files | Package content-only or complete-project examples | Inspect changes before copying |
 | Recompile supported code packs with Unreal build tools | Prepare downloads for distribution | Follow live installation and build logs |
 
-### Pick the right package
+### ⚡ Feature highlights
+
+- **Native desktop experience:** Go and Fyne GUI, installation progress, logs, and publisher tools.
+- **Smart Unreal integration:** Resolve `.uproject` engine associations and choose compatible versions.
+- **Incremental updates:** Compare file hashes, inspect differences, and update only changed files.
+- **Integrity checks:** SHA-256 manifests and validation workflows.
+- **Offline publishing:** Build versioned installers for systems and standalone examples.
+- **Code delivery:** Compile supported code and hybrid packs with Unreal Build Tool.
+- **Standalone examples:** Add assets to an existing project or install a complete sample project.
+- **Game Feature Plugins:** Package and install content-only Game Feature plugins with descriptor validation and project plugin enablement. Runtime activation requires Unreal's Game Features subsystem and a valid GameFeatureData asset; verify behavior in the editor.
+- **Automation friendly:** CLI operations for scripted installations and validation.
+
+### 📦 Pick the right package
 
 | Package | Destination | Purpose |
 | --- | --- | --- |
@@ -37,8 +57,9 @@ Gorgeous Installer helps Unreal Engine developers install versioned content and 
 | `hybrid` | Existing plugin root | Combined plugin payload |
 | `content-example` | Existing project's `Content/` | Asset-only examples |
 | `project-example` | Empty destination directory | Complete sample projects |
+| `game-feature-example` | Project's `Plugins/GameFeatures/<PluginName>/` | Content-only Game Feature Plugin; editor restart and runtime verification required |
 
-## Getting started
+## 🚀 Getting started
 
 **Requirements:** Go and the platform-specific prerequisites for Fyne; Unreal Engine is required for editor integration and code compilation. Asset-only examples with a numeric EngineAssociation can be installed without a local engine installation.
 
@@ -61,7 +82,7 @@ go run ./cmd/main -cli -project "/path/to/Game.uproject"
 
 For Windows build and signing instructions, see the [developer guide](.github/DEVELOPMENT.md). For example payload layouts and publishing, see [Examples](Documentation/EXAMPLES.md).
 
-## How it works
+## 🧭 How it works
 
 ```text
 Selected .uproject
@@ -81,7 +102,7 @@ Copy changed files -> optional Unreal build
 
 The installer compares packaged and destination files before applying updates. Content examples preserve unrelated project assets; full-project examples require an empty destination.
 
-## Project structure
+## 🗂️ Project structure
 
 | Path | Responsibility |
 | --- | --- |
@@ -94,11 +115,11 @@ The installer compares packaged and destination files before applying updates. C
 | `Documentation/` | Quickstart, examples and distribution notes |
 | `.github/` | Contribution and issue templates |
 
-## Contributing
+## 🤝 Contributing
 
 Issues and pull requests are welcome. Start with [CONTRIBUTING](.github/CONTRIBUTING.md), use the [issue templates](https://github.com/Epic-Nova/Gorgeous-Installer/issues/new/choose), and include your operating system, Unreal Engine version, and reproducible steps for installer bugs.
 
-## The Gorgeous Things ecosystem
+## 🌌 The Gorgeous Things ecosystem
 
 Gorgeous Installer is maintained by [Epic Nova](https://epicnova.net) alongside [Gorgeous Core](https://github.com/Epic-Nova/Gorgeous-Core). It is a delivery tool, not a runtime dependency of Gorgeous Core.
 
