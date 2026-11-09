@@ -21,7 +21,7 @@ import (
 func (g *GUIApp) buildExamplePublisherPanel(win fyne.Window, appendStatus func(string, ...any)) fyne.CanvasObject {
 	name := widget.NewEntry()
 	name.SetPlaceHolder("e.g. GorgeousLoadingScreenExample")
-	kind := widget.NewSelect([]string{"Content Example", "Project Example"}, nil)
+	kind := widget.NewSelect([]string{"Content Example", "Project Example", "Game Feature Plugin"}, nil)
 	kind.SetSelected("Content Example")
 	version := widget.NewEntry()
 	version.SetPlaceHolder("e.g. 5.7")
@@ -72,7 +72,7 @@ func (g *GUIApp) buildExamplePublisherPanel(win fyne.Window, appendStatus func(s
 		}
 		if err == nil {
 			packType := "content-example"
-			if kind.Selected == "Project Example" {
+			if kind.Selected == "Game Feature Plugin" { packType = "game-feature-example" } else if kind.Selected == "Project Example" {
 				packType = "project-example"
 			}
 			err = installer.ValidateExamplePayload(packType, dir)
@@ -103,7 +103,7 @@ func (g *GUIApp) buildExamplePublisherPanel(win fyne.Window, appendStatus func(s
 		snapshot := append([]versionEntry(nil), versions...)
 		g.showOfflinePublisherDialog(win, kind.Selected, &SystemManifest{ID: id, Name: id}, snapshot, "", "", appendStatus)
 	})
-	help := widget.NewLabel("Content Example copies the selected folder's contents into an existing project's Content folder. Preserve original asset paths and include dependencies. Project Example creates a complete project in an empty folder.")
+	help := widget.NewLabel("Content Example copies the selected folder's contents into an existing project's Content folder. Preserve original asset paths and include dependencies. Project Example creates a complete project in an empty folder. Game Feature Plugin installs a content-only Game Feature with an Active built-in state.")
 	help.Wrapping = fyne.TextWrapWord
 	return newGTCard("Example Installer Builder", "Package examples as standalone installers for website downloads",
 		container.NewVBox(widget.NewLabel("Example name"), name, kind,
