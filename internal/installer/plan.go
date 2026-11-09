@@ -137,7 +137,15 @@ func (i *Installer) BuildInstallPlan() (*InstallPlan, error) {
 
 func (i *Installer) resolveDestinationRootForPackType() (string, error) {
 	switch strings.ToLower(strings.TrimSpace(i.PackType)) {
-	case "content-example":
+	case "game-feature-example":
+  projectFile, err := resolveProjectFilePath(i.ProjectPath)
+  if err != nil { return "",err }
+  files, err := listPackFiles(normalizePackRoot(i.PackVersion.Path))
+  if err != nil { return "",err }
+  name,err := validateGameFeaturePayload(normalizePackRoot(i.PackVersion.Path),files)
+  if err != nil {return "",err}
+  return filepath.Join(filepath.Dir(projectFile),"Plugins","GameFeatures",name),nil
+ case "content-example":
 		projectFile, err := resolveProjectFilePath(i.ProjectPath)
 		if err != nil {
 			return "", err
@@ -407,7 +415,8 @@ func ValidateExamplePayload(packType, root string) error {
 }
 
 func validateExampleFiles(packType string, files []string) error {
-	projectFiles := 0
+	if packType == "game-feature-example" { _,err:=gameFeatureName(files);return err }
+ projectFiles := 0
 	for _, rel := range files {
 		first := strings.Split(filepath.ToSlash(rel), "/")[0]
 		if packType == "content-example" {
