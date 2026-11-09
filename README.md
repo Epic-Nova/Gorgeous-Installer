@@ -38,9 +38,6 @@ Gorgeous Installer helps Unreal Engine developers install versioned content and 
 | `content-example` | Existing project's `Content/` | Asset-only examples |
 | `project-example` | Empty destination directory | Complete sample projects |
 
-> [!NOTE]
-> Game Feature Plugin examples are being developed separately in [PR #2](https://github.com/Epic-Nova/Gorgeous-Installer/pull/2). They are **not** part of the current `master` release.
-
 ## Getting started
 
 **Requirements:** Go and the platform-specific prerequisites for Fyne; Unreal Engine is required for editor integration and code compilation. Asset-only examples with a numeric EngineAssociation can be installed without a local engine installation.
