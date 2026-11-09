@@ -1,264 +1,108 @@
+<div align="center">
+
 # Gorgeous Installer
 
-Gorgeous Installer is a native Go + Fyne application for installing content and code packs into an Unreal Engine plugin.
+### Ship the systems. Skip the setup.
 
-It supports both GUI and CLI workflows, resolves the engine from the selected .uproject, chooses a compatible pack version, installs files into the plugin, and (for code packs) compiles the plugin with Unreal build tooling.
+**The native desktop installer and publishing toolkit for Gorgeous Things and Unreal Engine.**
 
-## Current Capabilities
+[![Go](https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Fyne](https://img.shields.io/badge/Fyne-Desktop_UI-00AEEF)](https://fyne.io/)
+[![Unreal Engine](https://img.shields.io/badge/Unreal_Engine-313131?logo=unrealengine&logoColor=white)](https://www.unrealengine.com/)
+[![Issues](https://img.shields.io/github/issues/Epic-Nova/Gorgeous-Installer)](https://github.com/Epic-Nova/Gorgeous-Installer/issues)
+[![Stars](https://img.shields.io/github/stars/Epic-Nova/Gorgeous-Installer)](https://github.com/Epic-Nova/Gorgeous-Installer/stargazers)
 
-- Native desktop GUI (Fyne) with:
-  - animated boot intro
-  - rounded native Windows window corners
-  - draggable custom top bar
-  - animated window-open transition
-- Engine detection from .uproject EngineAssociation
-- Launcher and source build engine path resolution
-- Automatic compatible pack version selection
-  - version selector is hidden by default
-  - selector appears only when engine detection fails
-- Content and code pack install modes
-- Automatic action detection before install:
-  - Install when files are not present yet
-  - Update when pack files already exist and differ
-  - Reinstall when pack files are already fully installed and unchanged
-- SHA validation support:
-  - startup validation for configured pack SHA manifests
-  - SHA files are excluded from install copy operations
-  - animated GUI SHA validation screen (engine-version dropdown + optional manifest file)
-  - CLI SHA validation mode with explicit version/engine selection
-- Colorized live build log in GUI:
-  - errors in red tones
-  - warnings in amber tones
-  - auto-scroll to newest output
-- Update analysis visibility:
-  - differing files are listed in the installer log
-  - update copies only changed files
-- Code-pack compile UX improvements:
-  - app window expands with animation for larger log reading space
-  - closing while compiling cancels the running compile process
-  - compile failures include manual .sln rebuild advice
-  - compile failure screen offers Back to Logs
-- CLI mode for automation and scripting
+[Get started](Documentation/QUICKSTART.md) · [Example packs](Documentation/EXAMPLES.md) · [Report an issue](https://github.com/Epic-Nova/Gorgeous-Installer/issues/new/choose) · [Gorgeous Core](https://github.com/Epic-Nova/Gorgeous-Core)
 
-## Configuration
+</div>
 
-The installer reads config.json from embedded assets.
+---
 
-Example schema:
+## One installer. Different ways to build.
 
-```json
-{
-  "packName": "Gorgeous Content Pack",
-  "pluginName": "GorgeousCore",
-  "packType": "code",
-  "installPath": "Content",
-  "availableVersions": [
-    {
-      "version": "5.7",
-      "path": "packs/5.7/content",
-      "shaFile": "packs/5.7/manifest.sha256",
-      "checksum": ""
-    }
-  ]
-}
-```
+Gorgeous Installer helps Unreal Engine developers install versioned content and code packs, validate package integrity, and publish standalone installers. Built with **Go + Fyne**, it provides a native GUI and CLI without requiring Gorgeous Core in the target project for standalone examples.
 
-Fields:
+| Install | Publish | Verify |
+| :-- | :-- | :-- |
+| Detect Unreal Engine versions and choose compatible payloads | Build versioned offline installer bundles | Validate SHA-256 manifests |
+| Install, update, or reinstall changed files | Package content-only or complete-project examples | Inspect changes before copying |
+| Recompile supported code packs with Unreal build tools | Prepare downloads for distribution | Follow live installation and build logs |
 
-- packName: human-readable pack name.
-- pluginName: target plugin name to locate via .uplugin.
-- packType: content or code.
-- installPath: path segment appended under plugin Content/ or Source/ roots.
-- shaFile: optional checksum manifest for this version (sha256sum format).
-- availableVersions: list of installable version payloads.
+### Pick the right package
 
-Important behavior:
+| Package | Destination | Purpose |
+| --- | --- | --- |
+| `content` | Existing plugin's `Content/` | Plugin content |
+| `code` | Existing plugin's `Source/` | Plugin source and compilation |
+| `hybrid` | Existing plugin root | Combined plugin payload |
+| `content-example` | Existing project's `Content/` | Asset-only examples |
+| `project-example` | Empty destination directory | Complete sample projects |
 
-- content packs install under PLUGIN_PATH/Content + installPath.
-- code packs install under PLUGIN_PATH/Source + installPath.
-- for code installs, if installPath starts with Content, that root segment is stripped to avoid Source/Content nesting.
-- SHA manifest/control files are not copied into plugin destinations.
+> [!NOTE]
+> Game Feature Plugin examples are being developed separately in [PR #2](https://github.com/Epic-Nova/Gorgeous-Installer/pull/2). They are **not** part of the current `master` release.
 
-## SHA Validation
+## Getting started
 
-The installer can validate pack payloads using SHA manifests before installation.
+**Requirements:** Go and the platform-specific prerequisites for Fyne; Unreal Engine is required for editor integration and code compilation. Asset-only examples with a numeric EngineAssociation can be installed without a local engine installation.
 
-- Startup: configured shaFile manifests are validated against embedded pack files.
-- GUI: use Validate SHA to open the validator, select engine version from dropdown, optionally select a manifest, then validate.
-- CLI: use `-validate-sha` with `-version` (or `-engine-version`) and optional `-sha-file`.
-
-Manifest line format should follow sha256sum style, for example:
-
-```text
-<sha256>  relative/path/to/file.uasset
-```
-
-## Engine Detection and Path Resolution
-
-EngineAssociation from the selected .uproject is the source of truth.
-
-Resolution order includes:
-
-- direct path associations (including wrapped {path} forms)
-- Windows registry build maps and source build maps
-- installed-directory registry keys
-- standard install path fallbacks
-- Build.version semantic version fallback when association is not semantic
-
-## Plugin Discovery
-
-Plugin lookup order:
-
-1. Project plugin folder
-2. Engine Marketplace plugin folder
-3. Engine plugin folder
-
-Matching is done by .uplugin file name, using pluginName from config.
-
-## Code Pack Compile Strategy
-
-When packType is code, compilation attempts this order:
-
-1. UnrealBuildTool.dll via dotnet (first choice)
-2. UnrealBuildTool executable fallback
-3. RunUAT BuildPlugin fallback
-
-The first path is designed to match Unreal/MSBuild-style invocation patterns.
-
-## Build and Run
-
-Build using the workspace script:
-
-```powershell
-.\build.ps1
-```
-
-Build behavior:
-
-- Generates SHA manifests for every availableVersions path into availableVersions shaFile.
-- Missing/empty pack paths are warned and skipped by default.
-- Use `-StrictPackSHA` to fail the build if any configured version cannot be hashed.
-- Applies UPX compression automatically when UPX is installed.
-
-Build options:
-
-- `-SkipUPX` disables UPX compression.
-- `-UseUPX` requires UPX and fails if UPX is not installed.
-- `-TestSHAComparison` runs negative SHA tests with intentionally wrong manifests.
-- `-Sign -CertPath <pfx> [-CertPassword <pwd>]` signs the exe with signtool.
-
-UPX lookup notes:
-
-- The build script checks PATH first.
-- If not found in PATH, it also checks common WinGet install locations.
-
-Run SHA mismatch tests directly:
-
-```powershell
-.\test-sha-comparison.ps1
-```
-
-Sign an already-built executable:
-
-```powershell
-.\sign-build-output.ps1 -CertPath "C:\Path\To\codesign.pfx" -CertPassword "<password>"
-```
-
-Artifacts generated in `build/`:
-
-- `gorgeous-installer.exe`
-- `gorgeous-installer.exe.sha256`
-- `gorgeous-installer.exe.sig`
-- `gorgeous-installer.build.json`
-
-Or build directly:
-
-```powershell
+```bash
 go build ./...
+go test -tags ci ./...
 ```
 
-Run GUI:
+To launch the GUI, build the main entry point with your platform's Fyne prerequisites:
 
-```powershell
-.\gorgeous-installer.exe
+```bash
+go run ./cmd/main
 ```
 
-Run CLI:
+For CLI installation:
 
-```powershell
-.\gorgeous-installer.exe -cli -project "C:\Path\To\Game.uproject"
+```bash
+go run ./cmd/main -cli -project "/path/to/Game.uproject"
 ```
 
-Optional CLI flags:
+For Windows build and signing instructions, see the [developer guide](.github/DEVELOPMENT.md). For example payload layouts and publishing, see [Examples](Documentation/EXAMPLES.md).
 
-- -type content|code (defaults to config packType)
-- -version X.Y (force a specific pack version)
-- -engine-version X.Y (override engine version for pack selection)
-- -action install|update|reinstall (force action)
-- -validate-sha (run SHA validation mode)
-- -sha-file MANIFEST_PATH (override manifest for SHA validation)
-- -gui (force GUI mode)
-- -version-info (print embedded build metadata)
-
-CLI activation behavior:
-
-- No arguments: GUI mode (desktop/double-click flow).
-- CLI arguments present: CLI mode.
-- `-cli` always forces CLI mode.
-
-## Code Signing Notes
-
-- You do not need a Microsoft developer account to Authenticode-sign an EXE.
-- You do need a code-signing certificate (OV or EV) from a trusted CA.
-- EV certificates provide better SmartScreen reputation behavior.
-
-## Inspect EXE Metadata
-
-Use the helper script:
-
-```powershell
-.\show-exe-metadata.ps1
-```
-
-Or run these directly:
-
-```powershell
-(Get-Item .\build\gorgeous-installer.exe).VersionInfo | Format-List *
-Get-AuthenticodeSignature .\build\gorgeous-installer.exe | Format-List Status,StatusMessage,SignerCertificate
-.\build\gorgeous-installer.exe -version-info
-Get-Content .\build\gorgeous-installer.build.json -Raw
-```
-
-## Windows Registry Keys Used
-
-Builds and source builds are resolved from common Epic key variants, including:
-
-- HKEY_CURRENT_USER\Software\Epic Games\Unreal Engine\Builds
-- HKEY_CURRENT_USER\Software\EpicGames\Unreal Engine\Builds
-- HKEY_LOCAL_MACHINE\Software\Epic Games\Unreal Engine\Builds
-- HKEY_LOCAL_MACHINE\Software\EpicGames\Unreal Engine\Builds
-- HKEY_CURRENT_USER\Software\Epic Games\Unreal Engine\SourceBuilds
-- HKEY_CURRENT_USER\Software\EpicGames\Unreal Engine\SourceBuilds
-- HKEY_LOCAL_MACHINE\Software\Epic Games\Unreal Engine\SourceBuilds
-- HKEY_LOCAL_MACHINE\Software\EpicGames\Unreal Engine\SourceBuilds
-- HKEY_LOCAL_MACHINE\Software\WOW6432Node\Epic Games\Unreal Engine\<version>
-- HKEY_LOCAL_MACHINE\Software\WOW6432Node\EpicGames\Unreal Engine\<version>
-
-## Documentation
-
-- Quickstart: Documentation/QUICKSTART.md
-- Examples: Documentation/EXAMPLES.md
-- Pack folder notes: packs/README.md
-
-## Repository Layout
+## How it works
 
 ```text
-cmd/                Entry points and helper tools
-internal/config/    Config loading and defaults
-internal/unreal/    Unreal project and engine detection
-internal/registry/  Engine association/path resolution
-internal/installer/ Install and compile pipeline
-internal/ui/        Native GUI and window behavior
-packs/              Embedded pack payload roots
-Documentation/      User guides and usage scenarios
+Selected .uproject
+       |
+       v
+Engine association + version selection
+       |
+       v
+Embedded package + SHA validation
+       |
+       v
+Install plan (install / update / reinstall)
+       |
+       v
+Copy changed files -> optional Unreal build
 ```
+
+The installer compares packaged and destination files before applying updates. Content examples preserve unrelated project assets; full-project examples require an empty destination.
+
+## Project structure
+
+| Path | Responsibility |
+| --- | --- |
+| `cmd/main/` | Installer CLI and GUI entry point |
+| `cmd/builder/` | Package configuration helper |
+| `internal/config/` | Pack configuration and versions |
+| `internal/installer/` | Planning, installation, integrity checks and compilation |
+| `internal/unreal/` | Project and engine discovery |
+| `internal/ui/` | Fyne desktop interface and publisher |
+| `Documentation/` | Quickstart, examples and distribution notes |
+| `.github/` | Contribution and issue templates |
+
+## Contributing
+
+Issues and pull requests are welcome. Start with [CONTRIBUTING](.github/CONTRIBUTING.md), use the [issue templates](https://github.com/Epic-Nova/Gorgeous-Installer/issues/new/choose), and include your operating system, Unreal Engine version, and reproducible steps for installer bugs.
+
+## The Gorgeous Things ecosystem
+
+Gorgeous Installer is maintained by [Epic Nova](https://epicnova.net) alongside [Gorgeous Core](https://github.com/Epic-Nova/Gorgeous-Core). It is a delivery tool, not a runtime dependency of Gorgeous Core.
+
+For technical details, see the [documentation index](Documentation/QUICKSTART.md).
