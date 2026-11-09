@@ -125,6 +125,8 @@ func (i *Installer) Install() error {
 	}
 
 	switch i.PackType {
+ case "game-feature-example":
+  return i.installGameFeature()
 	case "content", "content-example", "project-example":
 		return i.installContentPack()
 	case "code":
