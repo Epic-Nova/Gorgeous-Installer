@@ -8,7 +8,6 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 > - ⭐ **Star the project** on [GitHub](https://github.com/Epic-Nova/Gorgeous-Installer)
 > - 📖 **Refer this project** in your project's README
 > - 👥🥂 **Mention the project** at local meetups and tell your friends/colleagues
-> - ☕️ **Download the installer** from the [Fab Marketplace](<FAB_MARKETPLACE_LINK_HERE>)
 
 ## Table of Contents
 
@@ -76,7 +75,7 @@ We use GitHub issues to track bugs and errors. If you run into an issue with the
 
 - 🐛 **Open an [Issue](https://github.com/Epic-Nova/Gorgeous-Installer/issues/new?template=bug_report.yaml).**
 - ✍️ **Explain the behavior you would expect and the actual behavior.**
-- ⚙️ **Please provide as much context as possible** and describe the ***reproduction steps*** that someone else can follow to recreate the issue on their own. This usually includes your code. If the code that you are experiencing issues with is Blueprint, then copy your script code and paste it in [BlueprintUE](https://blueprintue.com/) and share the link in the issue. For good bug reports, you should isolate the problem and create a reduced test case.
+- ⚙️ **Please provide as much context as possible** and describe the ***reproduction steps*** that someone else can follow to recreate the issue on their own. This usually includes your code. For installer bugs, include the pack type, Unreal Engine version, OS, sanitized logs, and a minimal reproducible payload when possible.
 - ℹ️ **Provide the information you collected in the previous section.**
 
 Once it's filed:
@@ -231,119 +230,22 @@ Please ensure that your documentation contributions follow the [Documentation Pa
 
 ### 🏷️ Naming Conventions
 
-> [!NOTE]
-> Consistent naming conventions help maintain code readability and understandability. Please adhere to the following guidelines:
-
--   **Classes & Files:**
-    -   **Blueprint Coding Classes:** Always use the `BP_` prefix. The suffix should always be the capitalized abbreviation of the Unreal Engine class type. For example:
-        -   `AActor`: `BP_MyActor_A`
-        -   `UActorComponent`: `BP_MyComponent_AC`
-        -   `UUserWidget`: `BP_MyWidget_UW`
-    -   **C++ Classes:** The `BP_` prefix is not required. Follow standard C++ naming conventions. The capitalized suffix based on the Unreal Engine class type is still recommended for consistency (e.g., `MyActor_A`, `MyComponent_AC`).
-    -   **Non-Coding Assets (e.g., Blueprints without code, Materials):** Use a descriptive prefix indicating the asset type (e.g., `M_` for Material, `SM_` for Static Mesh, `T_` for Texture).
-
--   **General Unreal Naming Convention:** We largely follow the standard Unreal Engine naming conventions outlined here: [Recommended Asset Naming Conventions](https://dev.epicgames.com/documentation/en-us/unreal-engine/recommended-asset-naming-conventions-in-unreal-engine-projects). Please refer to this documentation for asset types not explicitly mentioned above.
-
--   **Variable Names:** Use `PascalCase` (e.g., `PlayerHealth`, `CurrentLevel`, `TargetLocation`).
-
--   **Functions/Methods:** Use `PascalCase` (e.g., `InitializePlayer`, `ApplyDamage`, `GetWorldPosition`).
-
--   **Macro Definitions:** Use `UPPERCASE` with underscores to separate words (e.g., `MAX_HEALTH`, `DEFAULT_SPEED`, `IS_DEBUG_ENABLED`).
-
-> [!TIP]
-> **To gain a practical understanding of the Gorgeous Naming Convention, carefully examine the naming of existing files and code elements within the Gorgeous Ecosystem.** Observing these patterns will provide valuable insight into our expectations for naming new contributions.
-
----
+- Follow Go naming conventions: exported names in PascalCase, unexported names in camelCase.
+- Keep package names lowercase and concise; use descriptive filenames.
+- Keep installer pack types and JSON configuration keys backward compatible.
+- Use clear names for Unreal Engine paths and plugin descriptors.
 
 ### 💬 Code Comments
 
-> [!NOTE]   
-> Well-written code comments are essential for explaining the logic and intent behind your code.
-
--   **Use comments to explain non-obvious or complex logic.**
--   **Keep comments concise and up-to-date with the code.**
--   **Use block comments (`/* ... */`) for multi-line explanations at the beginning of functions or sections of code.**
--   **Use line comments (`//`) for short explanations of individual lines or small blocks of code.**
--   **Document public APIs (functions, classes, etc.) using docstrings or similar language-specific conventions.** Explain the purpose, parameters, return values, and any potential exceptions.
--   **Avoid stating the obvious.** Comments like `i = i + 1; // Increment i` are not helpful.
--   **Use meaningful variable and function names to reduce the need for excessive commenting.**
-
-> [!TIP]
-> **Looking at existing, well-documented code can be a great way to get started.** Pay attention to how experienced developers structure their code and explain their logic through comments. This can provide valuable insights and help you understand best practices for contributing to the project.
-
-
----
+Explain non-obvious behavior, safety constraints, and Unreal Engine compatibility assumptions. Avoid comments that merely repeat the code.
 
 ### 📝 Commit Messages
 
-> [!NOTE]  
-> Clear and informative commit messages help track changes and understand the history of the project. Please follow these guidelines:
-
--   **Separate the subject line from the body with a blank line.**
--   **Limit the subject line to 50 characters.**
--   **Capitalize the subject line.**
--   **Do not end the subject line with a period.**
--   **Use the imperative mood in the subject line** (e.g., "Fix bug", "Add new feature").
--   **Wrap the body at 72 characters.**
--   **Use the body to provide more context and explain the *what* and *why* of the change, not just the *how*.**
--   **Reference any related issues or pull requests in the body** (e.g., "Fixes #123", "Related to #456").
-
-> **Example Commit Messages:**
->
-> ```
-> Feat: Implement user authentication
->
-> This commit introduces user authentication functionality using JWT.
-> It includes user registration, login, and logout endpoints.
->
-> Fixes #10
-> ```
->
-> ```
-> Fix: Prevent crash when loading corrupted data
->
-> This commit addresses an issue where the application would crash
-> when attempting to load corrupted user data. It now includes
-> error handling to gracefully handle such cases.
-> ```
-
----
+Use concise, imperative commit subjects that describe the change. Keep unrelated refactors separate from fixes.
 
 ### 📚 Documentation Pages
 
-To ensure consistency and clarity across all Gorgeous Installer documentation, please adhere to the following guidelines when creating or modifying documentation pages:
-
-* **Clarity and Conciseness:** Use clear, concise, and easy-to-understand language. Avoid jargon or overly technical terms unless absolutely necessary, and provide definitions when needed.
-
-* **Logical Organization:** Structure your documentation logically. Use headings and subheadings to break down information into manageable sections. Consider using a table of contents for longer documents.
-
-* **Code Examples:** Where applicable, provide clear and well-formatted code examples. Ensure that examples are accurate, complete, and easy to copy and paste. Explain the purpose and expected output of each example.
-
-* **Consistent Terminology:** Use consistent terminology throughout the documentation. If a concept has a specific name within Gorgeous Installer, use that name consistently.
-
-* **Consistent Formatting:** Maintain a consistent formatting style for headings, code blocks, lists, and other elements. Use Markdown consistently.
-
-* **Links and References:** Link to other relevant sections of the documentation, external resources, or the Unreal Engine documentation where appropriate. Provide context for each link.
-
-* **Visual Aids:** Consider using diagrams, screenshots, or screen recordings to illustrate complex concepts or procedures. Ensure that visual aids are clear and relevant.
-
-* **Proofreading:** Always proofread your documentation carefully for typos, grammatical errors, and clarity. Ask a colleague to review your documentation if possible.
-
-* **Target Audience:** Consider your target audience when writing documentation. Are you writing for beginners, experienced users, or developers? Tailor your language and level of detail accordingly.
-
-* **Up-to-Date Information:** Ensure that your documentation is kept up-to-date with the latest version of Gorgeous Installer. Review and update documentation whenever significant changes are made to the project.
-
-* **Example Structure:** Consider structuring your documentation pages as follows:
-
-    1.  **Introduction:** Briefly introduce the topic and its purpose.
-    2.  **Overview:** Provide a high-level overview of the concept or feature.
-    3.  **Usage:** Explain how to use the concept or feature, providing code examples where appropriate.
-    4.  **Parameters/Inputs/Outputs:** Clearly define any parameters, inputs, or outputs.
-    5.  **Best Practices:** Offer guidance on best practices for using the feature or concept.
-    6.  **Troubleshooting:** Include a section on common issues and how to resolve them.
-    7.  **Related Information:** Link to other relevant documentation or resources.
-
-By following these guidelines, we can ensure that the Gorgeous Installer documentation is clear, consistent, and helpful for all users.
+Document new pack types with their payload layout, destination, prerequisites, validation rules, and example commands. Include platform-specific behavior and limitations.
 
 ---
 
