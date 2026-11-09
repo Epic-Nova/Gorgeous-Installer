@@ -38,7 +38,7 @@ func main() {
 	cliMode := flag.Bool("cli", false, "Run in CLI mode")
 	guiMode := flag.Bool("gui", false, "Run in GUI mode")
 	projectPath := flag.String("project", "", "Path to .uproject file or project directory")
-	packType := flag.String("type", "", "Pack type: content, code, hybrid, content-example, or project-example")
+	packType := flag.String("type", "", "Pack type: content, code, hybrid, content-example, project-example, or game-feature-example")
 	packVersion := flag.String("version", "", "Pack version to install or validate")
 	engineVersion := flag.String("engine-version", "", "Engine version used for pack selection (for install or SHA validation)")
 	installAction := flag.String("action", "", "Install action: install, update, or reinstall")
