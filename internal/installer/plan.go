@@ -415,7 +415,7 @@ func ValidateExamplePayload(packType, root string) error {
 }
 
 func validateExampleFiles(packType string, files []string) error {
-	if packType == "game-feature-example" { _,err:=gameFeatureName(files);return err }
+	if packType == "game-feature-example" { _,err:=validateGameFeaturePayload(root,files);return err }
  projectFiles := 0
 	for _, rel := range files {
 		first := strings.Split(filepath.ToSlash(rel), "/")[0]
