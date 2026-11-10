@@ -43,6 +43,12 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 	if cleanCurrent == cleanLatest {
 		return "", false
 	}
+	if order, ok := compareReleaseVersions(cleanLatest, cleanCurrent); ok {
+		if order > 0 {
+			return resp.LatestVersion, true
+		}
+		return "", false
+	}
 
 	systemId := "GorgeousInstaller-Source"
 	if installedNatively {
@@ -61,8 +67,8 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 			for _, v := range sys.Versions {
 				// Strip v prefix from stored version too before comparing.
 				if strings.TrimPrefix(v.Version, "v") == cleanCurrent {
-					// Version is registered — fall through to numeric comparison.
-					goto doNumericCompare
+					// Named, registered versions have no numeric ordering contract.
+					return "", false
 				}
 			}
 			// System found but current version not in its list — treat as outdated.
@@ -70,19 +76,12 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 		}
 	}
 
-doNumericCompare:
-	latestInt := ParseVersion(resp.LatestVersion)
-	currentInt := ParseVersion(currentVersion)
-
-	if latestInt > currentInt {
-		return resp.LatestVersion, true
-	}
-	// Both versions are non-numeric (e.g. both "Dev") but differ — already
-	// handled by the exact-match guard above, so no extra fallback needed.
+	// Named versions have no ordering contract when registration could not be resolved.
 	return "", false
 }
 
-// ParseVersion strips dots and non-numeric characters to form an integer version
+// ParseVersion is the legacy display helper; update ordering uses compareReleaseVersions.
+// It strips dots and non-numeric characters to form an integer version
 // e.g. "1.0.0" -> 100, "v1.2.3" -> 123
 func ParseVersion(v string) int {
 	v = strings.TrimPrefix(v, "v")
