@@ -20,9 +20,9 @@
 
 <div align="center">
 
-![Gorgeous Installer desktop preview](.github/installer-preview.svg)
+![Gorgeous Installer desktop preview](.github/installer-preview.png)
 
-*Interface preview placeholder. Replace with a real application screenshot when available.*
+*Gorgeous Installer recompiling GorgeousCore for Unreal Engine 5.7, with live build logs.*
 
 </div>
 

@@ -24,8 +24,12 @@ func OpenProject(uprojectPath string) error {
 	}
 
 	editorBin := filepath.Join(enginePath, "Engine", "Binaries", "Linux", "UnrealEditor")
-    if runtime.GOOS=="windows" { editorBin=filepath.Join(enginePath,"Engine","Binaries","Win64","UnrealEditor.exe") }
-    if runtime.GOOS=="darwin" { editorBin=filepath.Join(enginePath,"Engine","Binaries","Mac","UnrealEditor.app","Contents","MacOS","UnrealEditor") }
+	if runtime.GOOS == "windows" {
+		editorBin = filepath.Join(enginePath, "Engine", "Binaries", "Win64", "UnrealEditor.exe")
+	}
+	if runtime.GOOS == "darwin" {
+		editorBin = filepath.Join(enginePath, "Engine", "Binaries", "Mac", "UnrealEditor.app", "Contents", "MacOS", "UnrealEditor")
+	}
 	if _, err := os.Stat(editorBin); err != nil {
 		return fmt.Errorf("UnrealEditor not found at %s", editorBin)
 	}
@@ -58,18 +62,13 @@ func GenerateProjectFiles(ctx context.Context, uprojectPath string, logFn func(s
 		return fmt.Errorf("failed to detect engine: %w", err)
 	}
 
-	generatorScript := filepath.Join(enginePath, "Engine", "Build", "BatchFiles", "Linux", "GenerateProjectFiles.sh")
-	if runtime.GOOS == "windows" {
-		generatorScript = filepath.Join(enginePath, "Engine", "Build", "BatchFiles", "GenerateProjectFiles.bat")
-	}
-
-	if _, err := os.Stat(generatorScript); err != nil {
-		return fmt.Errorf("generator script not found at %s", generatorScript)
+	cmd, err := projectFileGeneratorCommand(ctx, enginePath, absPath, runtime.GOOS)
+	if err != nil {
+		return err
 	}
 
 	logFn("Starting GenerateProjectFiles...")
 
-	cmd := exec.CommandContext(ctx, generatorScript, "-project="+absPath, "-game")
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(absPath)
 
@@ -97,6 +96,24 @@ func GenerateProjectFiles(ctx context.Context, uprojectPath string, logFn func(s
 
 	logFn("GenerateProjectFiles completed successfully.")
 	return nil
+}
+
+func projectFileGeneratorCommand(ctx context.Context, enginePath, projectPath, platform string) (*exec.Cmd, error) {
+	generator := filepath.Join(enginePath, "Engine", "Build", "BatchFiles", "Linux", "GenerateProjectFiles.sh")
+	args := []string{"-project=" + projectPath, "-game"}
+	if platform == "windows" {
+		// Installed engines ship UBT without the source-engine generation batch file.
+		generator = filepath.Join(enginePath, "Engine", "Binaries", "DotNET", "UnrealBuildTool", "UnrealBuildTool.exe")
+		if info, err := os.Stat(generator); err == nil && !info.IsDir() {
+			args = []string{"-projectfiles", "-project=" + projectPath, "-game", "-engine"}
+		} else {
+			generator = filepath.Join(enginePath, "Engine", "Build", "BatchFiles", "GenerateProjectFiles.bat")
+		}
+	}
+	if info, err := os.Stat(generator); err != nil || info.IsDir() {
+		return nil, fmt.Errorf("project file generator not found at %s", generator)
+	}
+	return exec.CommandContext(ctx, generator, args...), nil
 }
 
 // BuildProject invokes the UnrealBuildTool to compile the project.

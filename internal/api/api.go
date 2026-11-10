@@ -19,6 +19,8 @@ var (
 	IsDevMode  = false
 	IsOffline  = false
 	httpClient = &http.Client{Timeout: 10 * time.Second}
+	// Large publisher payloads need a longer deadline while retaining network consent and TLS checks.
+	s3UploadClient = &http.Client{Timeout: 5 * time.Minute, Transport: consentTransport{}}
 )
 
 // No import-time probes or TLS downgrade. Consent is checked at every request.
@@ -261,7 +263,7 @@ func PublishSystem(systemId, version, changelog, signature, checksum, payloadPat
 	putReq.ContentLength = fileStat.Size()
 	putReq.Header.Set("Content-Type", "application/zip")
 
-	s3Resp, err := http.DefaultClient.Do(putReq)
+	s3Resp, err := s3UploadClient.Do(putReq)
 	if err != nil {
 		return err
 	}
