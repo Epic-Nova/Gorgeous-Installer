@@ -38,11 +38,8 @@ type UpdateManifest struct {
 func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 	if pidToWait > 0 {
 		fmt.Printf("Waiting for Unreal Editor (PID: %d) to close gracefully...\n", pidToWait)
-		for {
-			if err := checkProcessAlive(pidToWait); err != nil {
-				break
-			}
-			time.Sleep(1 * time.Second)
+		if err := waitForProcessExit(pidToWait); err != nil {
+			return err
 		}
 	}
 
@@ -206,7 +203,7 @@ func clearVerifiedBinaryChecksums(projectPath, pluginName string) {
 	os.WriteFile(persistentDataPath, updatedData, 0644)
 }
 
-func checkProcessAlive(pid int) error {
+func waitForProcessExit(pid int) error {
 	for {
 		if !isProcessRunning(pid) {
 			return nil
