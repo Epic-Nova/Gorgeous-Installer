@@ -2,7 +2,9 @@
 
 package ui
 
-func startRoundedWindowStyling(_ string, _ int32) {
+import "fyne.io/fyne/v2"
+
+func startRoundedWindowStyling(_ fyne.Window, _ int32) {
 	// No-op on non-Windows platforms.
 }
 

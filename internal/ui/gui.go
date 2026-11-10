@@ -453,6 +453,8 @@ func (g *GUIApp) Run() {
 	win.Resize(fyne.NewSize(920, 560))
 	win.SetFixedSize(false)
 	win.CenterOnScreen()
+	nativeWindow := win
+	win = withWindowDragArea(win)
 	g.win = win
 
 	win.SetCloseIntercept(func() {
@@ -780,6 +782,15 @@ func (g *GUIApp) Run() {
 			refreshPlanState()
 		}
 	}
+
+	configureProjectDrop(win, g.config.PackType, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return installRunning
+	}, loadProject, func(err error) {
+		appendStatus("Project drop rejected: %v", err)
+		g.showAnimatedDialog("Project selection", err.Error(), true)
+	})
 
 	// ── Plan refresh ──────────────────────────────────────────────────────────
 	refreshPlanState = func() {
@@ -1370,7 +1381,7 @@ func (g *GUIApp) Run() {
 	}()
 
 	playBootSequence(win, iconRes, isPackless, mainShell)
-	startRoundedWindowStyling(win.Title(), 32)
+	startRoundedWindowStyling(nativeWindow, 32)
 
 	// Check for a previous update error log and show it after the boot sequence
 	if errPath, err := settings.ErrorFilePath(); err == nil {

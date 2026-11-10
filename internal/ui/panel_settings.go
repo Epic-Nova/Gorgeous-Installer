@@ -104,13 +104,66 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		container.NewHBox(changeBinBtn, layout.NewSpacer()),
 		container.NewHBox(newGTLabel("Installed Version:"), newGTValueLabel(buildinfo.Version)),
 	)
+	if runtime.GOOS == "windows" {
+		installBtn := widget.NewButtonWithIcon("Install or repair for this user", theme.DownloadIcon(), nil)
+		uninstallBtn := widget.NewButtonWithIcon("Uninstall from this user account", theme.DeleteIcon(), nil)
+		if !settings.NativeInstallationPresent(appSettings) {
+			uninstallBtn.Disable()
+		}
+		installBtn.OnTapped = func() {
+			snapshot := *appSettings
+			snapshot.SearchPaths = append([]string(nil), appSettings.SearchPaths...)
+			progress := dialog.NewProgressInfinite("Installing Gorgeous Installer", "Adding this user's Start menu shortcut and Installed Apps entry...", win)
+			progress.Show()
+			go func() {
+				err := settings.InstallNative(&snapshot, buildinfo.Version)
+				fyne.Do(func() {
+					progress.Hide()
+					if err != nil {
+						g.showAnimatedDialog("Installation failed", err.Error(), true)
+						return
+					}
+					appSettings.InstalledNatively = snapshot.InstalledNatively
+					uninstallBtn.Enable()
+					appendStatus("Installed for this user in %s; no autostart was enabled.", appSettings.LocalBinPath)
+					g.showAnimatedDialog("Installed", "Gorgeous Installer is available in the Start menu and Windows Installed Apps.", false)
+				})
+			}()
+		}
+		uninstallBtn.OnTapped = func() {
+			dialog.ShowConfirm("Uninstall Gorgeous Installer", "Remove this user's installed executable, Start menu shortcut and Installed Apps entry? Your preferences and unrelated files are kept.", func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				mustExit, err := settings.UninstallNative(appSettings)
+				if err != nil {
+					g.showAnimatedDialog("Uninstall failed", err.Error(), true)
+					return
+				}
+				uninstallBtn.Disable()
+				if mustExit {
+					fyne.CurrentApp().Quit()
+					return
+				}
+				g.showAnimatedDialog("Uninstalled", "The per-user installation was removed. Your preferences were kept.", false)
+			}, win)
+		}
+		installerVBox.Add(container.NewHBox(installBtn, uninstallBtn))
+	}
 
 	if runtime.GOOS == "windows" {
-		assocCheck := widget.NewCheck("Associate .uproject files with Gorgeous Installer", func(b bool) {
+		assocCheck := widget.NewCheck("Register .uproject association (Windows default-app choice still applies)", func(b bool) {
 			appSettings.UprojectAssociated = b
 		})
 		assocCheck.SetChecked(appSettings.UprojectAssociated)
 		installerVBox.Add(assocCheck)
+		chooseDefault := widget.NewButton("Choose the .uproject default in Windows Settings", func() {
+			target, _ := url.Parse("ms-settings:defaultapps")
+			if err := fyne.CurrentApp().OpenURL(target); err != nil {
+				appendStatus("Cannot open Windows Default Apps: %v", err)
+			}
+		})
+		installerVBox.Add(chooseDefault)
 	}
 
 	installerSection := newGTCard("Installer Configuration", "Native installation settings",
@@ -124,12 +177,12 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		isDev = appSettings.BinDevMode
 	}
 
-    // Legacy preference is ignored: production connections always require TLS.
-    appSettings.ForceHTTP=false
-    forceHttpCheck:=widget.NewCheck("HTTPS is required",nil)
-    forceHttpCheck.SetChecked(true)
-    forceHttpCheck.Disable()
-    forceHttpCheck.Hide()
+	// Legacy preference is ignored: production connections always require TLS.
+	appSettings.ForceHTTP = false
+	forceHttpCheck := widget.NewCheck("HTTPS is required", nil)
+	forceHttpCheck.SetChecked(true)
+	forceHttpCheck.Disable()
+	forceHttpCheck.Hide()
 
 	updateDevUI := func() {
 		anyDev := appSettings.DevMode || appSettings.BinDevMode
@@ -198,17 +251,20 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 				if g.win == nil {
 					return
 				}
+				binPath := settings.NativeExecutablePath(appSettings)
+				if !appSettings.InstalledNatively {
+					executable, _ := os.Executable()
+					workingDirectory, _ := os.Getwd()
+					var err error
+					binPath, err = updater.SourceDirectory(executable, workingDirectory)
+					if err != nil {
+						g.showAnimatedDialog("Update Error", err.Error(), true)
+						return
+					}
+				}
 				iconRes := loadIconResource()
 				setStatus := g.playUpdateSequence(g.win, iconRes)
 				setStatus("Downloading " + displayVer + "...")
-
-				binPath := appSettings.LocalBinPath + "/gorgeous-installer"
-				if runtime.GOOS == "windows" {
-					binPath += ".exe"
-				}
-				if !appSettings.InstalledNatively {
-					binPath = "."
-				}
 
 				go func() {
 					setStatus("Applying update...")

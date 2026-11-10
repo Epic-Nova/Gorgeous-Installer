@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 // AppSettings holds the persistent configuration for the Gorgeous Installer.
@@ -62,13 +61,17 @@ func DefaultSettings() *AppSettings {
 func LoadSettings() (*AppSettings, error) {
 	path, err := ConfigFilePath()
 	if err != nil {
-		return DefaultSettings(), nil
+		defaults := DefaultSettings()
+		defaults.InstalledNatively = isInstalledNativelyAt(defaults.LocalBinPath)
+		return defaults, nil
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return DefaultSettings(), nil
+			defaults := DefaultSettings()
+			defaults.InstalledNatively = isInstalledNativelyAt(defaults.LocalBinPath)
+			return defaults, nil
 		}
 		return DefaultSettings(), fmt.Errorf("failed to read settings file: %w", err)
 	}
@@ -79,7 +82,7 @@ func LoadSettings() (*AppSettings, error) {
 	}
 
 	// Update InstalledNatively based on actual presence
-	settings.InstalledNatively = IsInstalledNatively()
+	settings.InstalledNatively = isInstalledNativelyAt(settings.LocalBinPath)
 
 	return settings, nil
 }
@@ -116,28 +119,13 @@ func SaveSettings(settings *AppSettings) error {
 
 // IsInstalledNatively checks if the current running executable is the natively installed binary.
 func IsInstalledNatively() bool {
-	execPath, err := os.Executable()
-	if err != nil {
-		return false
+	appSettings := DefaultSettings()
+	if path, err := ConfigFilePath(); err == nil {
+		if data, err := os.ReadFile(path); err == nil {
+			_ = json.Unmarshal(data, appSettings)
+		}
 	}
-	execPath, _ = filepath.EvalSymlinks(execPath)
-	execPath = filepath.Clean(execPath)
-
-	if runtime.GOOS == "windows" {
-		localAppData := os.Getenv("LOCALAPPDATA")
-		binPath := filepath.Join(localAppData, "Programs", "GorgeousInstaller", "gorgeous-installer.exe")
-		binPath = filepath.Clean(binPath)
-		return strings.EqualFold(execPath, binPath)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
-
-	binPath := filepath.Join(home, ".local", "bin", "gorgeous-installer")
-	binPath = filepath.Clean(binPath)
-	return execPath == binPath
+	return isInstalledNativelyAt(appSettings.LocalBinPath)
 }
 
 // ErrorFilePath returns the path to the update_error.txt file.

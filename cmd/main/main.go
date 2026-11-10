@@ -10,6 +10,7 @@ import (
 	"gorgeous-installer/internal/buildinfo"
 	"gorgeous-installer/internal/config"
 	"gorgeous-installer/internal/installer"
+	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/ui"
 	"gorgeous-installer/internal/unreal"
 )
@@ -55,7 +56,34 @@ func main() {
 	targetPlugin := flag.String("target-plugin", "", "Explicit plugin selected for a ZIP update")
 	allowNetwork := flag.Bool("allow-network", false, "Allow HTTPS API access for this invocation")
 	offline := flag.Bool("offline", false, "Disable all API access")
+	installSelf := flag.Bool("install-self", false, "Install Gorgeous Installer for the current Windows user")
+	uninstallSelf := flag.Bool("uninstall-self", false, "Uninstall this user's Gorgeous Installer")
+	selfInstallDir := flag.String("self-install-dir", "", "Installation directory for --install-self or --uninstall-self")
 	flag.Parse()
+	if *installSelf || *uninstallSelf {
+		if *installSelf && *uninstallSelf {
+			fmt.Fprintln(os.Stderr, "Choose either --install-self or --uninstall-self")
+			os.Exit(2)
+		}
+		appSettings, err := settings.LoadSettings()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if *selfInstallDir != "" {
+			appSettings.LocalBinPath = *selfInstallDir
+		}
+		if *installSelf {
+			err = settings.InstallNative(appSettings, buildinfo.Version)
+		} else {
+			_, err = settings.UninstallNative(appSettings)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *targetPlugin != "" {
 		os.Setenv("GORGEOUS_UPDATE_TARGET", *targetPlugin)
 	}
