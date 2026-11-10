@@ -67,8 +67,8 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 			for _, v := range sys.Versions {
 				// Strip v prefix from stored version too before comparing.
 				if strings.TrimPrefix(v.Version, "v") == cleanCurrent {
-					// Named, registered versions have no numeric ordering contract.
-					return "", false
+					// Preserve the legacy fallback for named releases such as Dev.
+					goto legacyNamedVersions
 				}
 			}
 			// System found but current version not in its list — treat as outdated.
@@ -76,7 +76,11 @@ func CheckForUpdates(currentVersion string, installedNatively bool) (string, boo
 		}
 	}
 
-	// Named versions have no ordering contract when registration could not be resolved.
+legacyNamedVersions:
+	// Valid numeric/prerelease pairs were compared above; retain existing named-release behavior.
+	if ParseVersion(resp.LatestVersion) > ParseVersion(currentVersion) {
+		return resp.LatestVersion, true
+	}
 	return "", false
 }
 
