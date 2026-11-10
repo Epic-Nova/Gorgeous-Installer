@@ -1,3 +1,5 @@
+//go:build cgo
+
 package ui
 
 import (
@@ -9,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -149,7 +150,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	pluginPathBrowseBtn := widget.NewButton("Browse", func() {
 		dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
 			if lu != nil {
-				pluginPathEntry.SetText(lu.Path())
+				pluginPathEntry.SetText(normalizeURIPath(lu))
 			}
 		}, win)
 	})
@@ -209,7 +210,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 	pathBrowseBtn := widget.NewButton("Browse", func() {
 		dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
 			if lu != nil {
-				pathEntry.SetText(lu.Path())
+				pathEntry.SetText(normalizeURIPath(lu))
 			}
 		}, win)
 	})
@@ -434,10 +435,9 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 						srcDir = "."
 					}
 
-					var cmdZip *exec.Cmd
+					archiveRoot := srcDir
 					if !isInstallerBinary {
-						cmdZip = exec.Command("zip", "-r", zipPath, ".", "-x", "build/*", "build", "*.exe", "*.syso", ".git/*", ".git", "*.log", "*.gti")
-						cmdZip.Dir = srcDir
+						archiveRoot = srcDir
 					} else {
 						var buildDir string
 						if filepath.Base(srcDir) == "build" {
@@ -462,10 +462,9 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 								}
 							}
 						}
-						cmdZip = exec.Command("zip", "-r", zipPath, ".")
-						cmdZip.Dir = buildDir
+						archiveRoot = buildDir
 					}
-					if err := cmdZip.Run(); err != nil {
+					if err := writePublisherZIP(archiveRoot, zipPath, !isInstallerBinary); err != nil {
 						fyne.Do(func() {
 							if progress != nil {
 								progress.Hide()
@@ -631,9 +630,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 					cfgData, _ := json.MarshalIndent(cfg, "", "  ")
 					os.WriteFile(filepath.Join(tempDir, "config.json"), cfgData, 0644)
 
-					cmdZip := exec.Command("zip", "-r", zipPath, ".")
-					cmdZip.Dir = tempDir
-					if err := cmdZip.Run(); err != nil {
+					if err := writePublisherZIP(tempDir, zipPath, false); err != nil {
 						fyne.Do(func() {
 							if progress != nil {
 								progress.Hide()
@@ -705,42 +702,15 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 				err = ykErr
 
 				if err != nil {
-					killChan := make(chan bool)
 					fyne.Do(func() {
 						if progress != nil {
 							progress.Hide()
 						}
-						dialog.ShowConfirm("PIV Error", "Failed to open YubiKey (outstanding connections). Force kill conflicting background processes?", func(b bool) {
-							killChan <- b
-						}, win)
+						appendStatus("PIV Error: Failed to open YubiKey (%v). Check the smart-card service and close conflicting card sessions before retrying.", err)
+						publishBtn.SetRunning(false)
+						publishBtn.SetEnabled(true)
 					})
-
-					if <-killChan {
-						if runtime.GOOS == "windows" {
-							exec.Command("taskkill", "/IM", "scardsvr.exe", "/F").Run()
-							exec.Command("taskkill", "/IM", "gpg-agent.exe", "/F").Run()
-							exec.Command("net", "start", "scardsvr").Run()
-						} else {
-							exec.Command("killall", "gpg-agent").Run()
-						}
-						time.Sleep(2 * time.Second)
-						yk, err = piv.Open(cards[0])
-					}
-
-					if err != nil {
-						fyne.Do(func() {
-							appendStatus("PIV Error: Failed to open YubiKey (%v)", err)
-							publishBtn.SetRunning(false)
-							publishBtn.SetEnabled(true)
-						})
-						return
-					}
-
-					fyne.Do(func() {
-						if progress != nil {
-							progress.Show()
-						}
-					})
+					return
 				}
 				// YubiKey will be closed explicitly after the goroutine
 				defer yk.Close()
@@ -940,7 +910,7 @@ func (g *GUIApp) buildPublisherPanel(win fyne.Window, appendStatus func(string, 
 			container.NewHBox(widget.NewLabel("Source Dir:"), container.NewGridWrap(fyne.NewSize(200, 35), installerPathEntry), widget.NewButton("Browse", func() {
 				dialog.ShowFolderOpen(func(lu fyne.ListableURI, err error) {
 					if lu != nil {
-						installerPathEntry.SetText(lu.Path())
+						installerPathEntry.SetText(normalizeURIPath(lu))
 					}
 				}, win)
 			})),
@@ -1193,47 +1163,26 @@ func (g *GUIApp) rebuildInstallerWithVersion(win fyne.Window, cleanVer string, s
 		// winres.json uses a 4-part version string like "1.0.0.0"
 		winresPath := filepath.Join(srcDir, "winres.json")
 		if data, err := os.ReadFile(winresPath); err == nil {
-			// Build a 4-part version from cleanVer (e.g. "1.2.3" -> "1.2.3.0")
-			parts := strings.Split(cleanVer, ".")
-			for len(parts) < 4 {
-				parts = append(parts, "0")
+			patched, err := patchPublisherWinresVersion(data, cleanVer)
+			if err != nil {
+				updateLbl("Cannot update Windows resource version: " + err.Error())
+				fyne.Do(func() { progress.Hide() })
+				return
 			}
-			fourPartVer := strings.Join(parts[:4], ".")
-			re := regexp.MustCompile(`"(file_version|product_version|FileVersion|ProductVersion)":\s*"[^"]*"`)
-			patched := re.ReplaceAllStringFunc(string(data), func(m string) string {
-				keyEnd := strings.Index(m, ":")
-				key := m[:keyEnd+1]
-				return key + ` "` + fourPartVer + `"`
-			})
-			if err := os.WriteFile(winresPath, []byte(patched), 0644); err != nil {
+			if err := os.WriteFile(winresPath, patched, 0644); err != nil {
 				updateLbl("Warning: could not patch winres.json: " + err.Error())
 			} else {
-				updateLbl("Patched winres.json version to " + fourPartVer)
+				updateLbl("Patched winres.json version to " + cleanVer)
 			}
 		} else {
 			updateLbl("Warning: could not read winres.json (skipping): " + err.Error())
 		}
 
 		// --- 3. Run build ---
-		buildArgs := []string{"--clean"}
-		if crossWindows {
-			buildArgs = append(buildArgs, "--cross-windows")
-			updateLbl("Running ./build.sh --clean --cross-windows (Linux + Windows)...")
-		} else {
-			updateLbl("Running ./build.sh --clean ...")
-		}
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			// On Windows use build.ps1 (cross-compile not applicable from Windows)
-			cmd = exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", filepath.Join(srcDir, "build.ps1"), "-Clean")
-		} else {
-			args := append([]string{filepath.Join(srcDir, "build.sh")}, buildArgs...)
-			cmd = exec.Command("bash", args...)
-		}
-		cmd.Dir = srcDir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			updateLbl("Build failed: " + err.Error() + "\n" + string(out))
+		updateLbl("Building installer for " + runtime.GOOS + "...")
+		cmd := publisherBuildCommand(srcDir, runtime.GOOS, true, crossWindows)
+		if err := runPublisherBuild(cmd, func(format string, args ...any) { updateLbl(fmt.Sprintf(format, args...)) }); err != nil {
+			updateLbl("Build failed: " + err.Error())
 			fyne.Do(func() { progress.Hide() })
 			return
 		}

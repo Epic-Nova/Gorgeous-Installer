@@ -40,16 +40,16 @@ These files are embedded at build time.
 .\build.ps1
 ```
 
-Or:
+After the build script has generated the required build metadata, a direct Windows build is also possible:
 
 ```powershell
-go build ./...
+go build -o build/gorgeous-installer.exe ./cmd/main
 ```
 
 ## 4) Run GUI
 
 ```powershell
-.\gorgeous-installer.exe
+.\build\gorgeous-installer.exe
 ```
 
 Typical GUI flow:
@@ -57,7 +57,9 @@ Typical GUI flow:
 1. Select a .uproject file.
 2. Engine/version is auto-detected from EngineAssociation.
 3. Compatible pack version is auto-selected.
-4. Install starts and logs stream live.
+4. Review the install plan and start installation; logs stream live.
+
+For per-user Windows installation, Start Menu/Installed apps registration, frameless dragging, file drops and uninstall, see [Windows workflows](Windows.md).
 
 Before install starts, the app compares pack files against the target plugin path:
 

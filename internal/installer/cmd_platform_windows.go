@@ -18,11 +18,9 @@ func configureCommandForPlatform(cmd *exec.Cmd) {
 }
 
 func isProcessRunning(pid int) bool {
-	const STANDARD_RIGHTS_REQUIRED = 0x000F0000
-	const SYNCHRONIZE = 0x00100000
 	const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-	handle, err := syscall.OpenProcess(STANDARD_RIGHTS_REQUIRED|SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	handle, err := syscall.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		return false
 	}

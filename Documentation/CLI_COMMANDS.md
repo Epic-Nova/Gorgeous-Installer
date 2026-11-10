@@ -18,17 +18,32 @@ By default, the installer attempts to run in GUI mode unless specified otherwise
 - `--version-info`: Print build metadata (version, commit hash, date) and exit.
 
 ### Core Arguments
-- `--project <path>`: The absolute or relative path to the `.uproject` file or the Unreal project directory. Can also be passed as the first positional argument.
-- `--type <type>`: Pack type to install (`content` or `code`).
-- `--version <version>`: The specific pack version to install or validate (e.g. `1.0.0`).
+- `--project <path>`: The absolute or relative path to the `.uproject` file or Unreal project directory. A `project-example` install instead requires an empty destination directory. Can also be passed as the first positional argument.
+- `--type <type>`: `content`, `code`, `hybrid`, `content-example`, `project-example`, or `game-feature-example`.
+- `--version <version>`: The configured pack version to install or validate (for example `5.7` for a UE 5.7 payload mapping).
 - `--engine-version <version>`: Engine version used to select the correct pack (e.g. `5.4`).
 
 ### Operations
 - `--action <action>`: Defines the installation action. Valid options are `install`, `update`, or `reinstall`.
 - `--source-dir <path>`: Use a custom local source directory containing plugin files to install instead of the embedded payloads.
-- `--install-zip <path>`: Apply an installer update from a downloaded ZIP payload.
+- `--install-zip <path>`: Apply a local plugin-update ZIP to the specified project and explicitly selected `--target-plugin`. This is separate from installer binary self-updates.
 - `--recompile-only`: Skip extracting files and exclusively run UnrealBuildTool to compile the plugin binaries for the project.
 - `--verify-compatibility`: Opens the GUI mode to resolve binary offset mismatches and initiate a plugin recompile if necessary.
+- `--regenerate-project`: Opens the project-file regeneration/recompile workflow.
+- `--target-plugin <name>`: Explicitly binds a ZIP update to the intended plugin.
+
+### Network access
+- `--allow-network`: Explicitly allow HTTPS API requests for this invocation.
+- `--offline`: Disable all API access, overriding network consent.
+
+Network access is off by default. Local installs, SHA validation and compilation do not require API permission.
+
+### Windows self-installation
+- `--install-self`: Install for the current user, including a Start Menu shortcut and Installed apps registration.
+- `--uninstall-self`: Remove the recorded installation and its owned shell integration.
+- `--self-install-dir <directory>`: Override the configured directory for these self-install/uninstall operations.
+
+These operations run before loading embedded pack configuration or initializing network access. They do not enable sign-in autostart or silently replace Windows' protected default-app choice. See [Windows workflows](Windows.md).
 
 ### SHA Validation
 - `--validate-sha`: Validates the integrity of pack files against a SHA manifest in CLI mode.
@@ -58,8 +73,8 @@ Only re-run UnrealBuildTool to compile the plugin binaries without copying any n
 ./gorgeous-installer --cli --recompile-only --reopen-project "C:\UnrealProjects\MyGame\MyGame.uproject"
 ```
 
-### 4. Background Updater Pattern
-Wait for an old instance of an application (e.g. PID 4321) to exit, then apply a new update ZIP package:
+### 4. Plugin Update After Editor Exit
+Wait for Unreal Editor (e.g. PID 4321) to exit, then apply a plugin update to its selected project/plugin:
 ```bash
-./gorgeous-installer --cli --wait-for-pid 4321 --install-zip "update_v1.1.0.zip"
+./gorgeous-installer --cli --wait-for-pid 4321 --project "/projects/MyGame/MyGame.uproject" --target-plugin GorgeousCore --install-zip "update_v1.1.0.zip"
 ```

@@ -29,6 +29,8 @@ cd Gorgeous-Installer
 go test -tags ci ./...
 ```
 
+Run the host build script once before these commands: it generates the ignored `internal/buildinfo/buildinfo.go` imported by the application. Direct Go commands reuse that metadata. Windows installation, native interaction checks and optional Unreal integration commands are documented in [Windows workflows](../Documentation/Windows.md).
+
 The `ci` tag uses Fyne's test-friendly configuration where applicable. Automated tests are **not** a substitute for native GUI interaction or opening the resulting assets in Unreal Editor.
 
 ### 🖥️ Run the desktop application
@@ -57,7 +59,7 @@ Consult `build.ps1` for available signing, UPX, and SHA validation options.
 
 ### 🐧 Linux
 
-Install Go, Git, a C compiler, and Fyne's required OpenGL/X11 development libraries for your distribution. The offline publisher invokes `build.sh --cross-windows`; Windows cross-compilation requires the appropriate MinGW toolchain and native dependencies.
+Install Go, Git, a C compiler, and Fyne's required OpenGL/X11 development libraries for your distribution. On Linux the offline publisher invokes `build.sh --cross-windows`; Windows cross-compilation requires the appropriate MinGW toolchain and native dependencies. On Windows the publisher invokes native `build.ps1`, without requiring Bash, `zip` or `cp`.
 
 ### 🍎 macOS
 

@@ -1,3 +1,5 @@
+//go:build cgo
+
 package ui
 
 import (
@@ -19,6 +21,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"gorgeous-installer/internal/buildinfo"
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/unreal"
 )
@@ -37,13 +40,13 @@ func (g *GUIApp) buildProjectsPanel(win fyne.Window, appendStatus func(string, .
 				appendStatus("Native install failed: %v", err)
 				return
 			}
-			appSettings.InstalledNatively = true
+			appSettings.InstalledNatively = settings.IsInstalledNatively()
 			_ = settings.SaveSettings(appSettings)
-			appendStatus("Successfully installed natively to %s and registered desktop entry.", appSettings.LocalBinPath)
+			appendStatus("Installed for this user in %s and registered the application launcher.", appSettings.LocalBinPath)
 			if installBanner != nil {
 				installBanner.Hide()
 			}
-			g.showAnimatedDialog("Success", "Installed natively. You can now open .uproject files directly.", false)
+			g.showAnimatedDialog("Success", "Installed for this user. Open Gorgeous Installer from the application menu. Windows file associations can be enabled separately in Settings.", false)
 		})
 		installBtn.Importance = widget.HighImportance
 
@@ -51,7 +54,7 @@ func (g *GUIApp) buildProjectsPanel(win fyne.Window, appendStatus func(string, .
 
 		infoBox := container.NewHBox(
 			widget.NewIcon(theme.InfoIcon()),
-			canvas.NewText("Install natively to enable double-clicking .uproject files.", gtTextPrimary),
+			canvas.NewText("Install for this user to add Gorgeous Installer to the application menu.", gtTextPrimary),
 			layout.NewSpacer(),
 			installBtn,
 		)
@@ -392,6 +395,9 @@ func (t *tileWidget) TappedSecondary(ev *fyne.PointEvent) {
 
 // installNatively installs the binary and creates the desktop entry or windows registry
 func installNatively(appSettings *settings.AppSettings) error {
+	if runtime.GOOS == "windows" {
+		return settings.InstallNative(appSettings, buildinfo.Version)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -403,9 +409,6 @@ func installNatively(appSettings *settings.AppSettings) error {
 	}
 
 	binName := "gorgeous-installer"
-	if runtime.GOOS == "windows" {
-		binName = "gorgeous-installer.exe"
-	}
 	destBin := filepath.Join(binDir, binName)
 
 	// Rename existing to avoid text file busy error if it's currently running
@@ -424,13 +427,6 @@ func installNatively(appSettings *settings.AppSettings) error {
 	defer dst.Close()
 	if _, err := io.Copy(dst, src); err != nil {
 		return err
-	}
-
-	if runtime.GOOS == "windows" {
-		// Windows Registry
-		// Define the ProgID for the installer but DO NOT associate .uproject with it automatically.
-		_ = exec.Command("reg", "add", `HKCU\Software\Classes\GorgeousInstaller.ProjectFile\shell\open\command`, "/ve", "/d", fmt.Sprintf(`"%s" "%%1"`, destBin), "/f").Run()
-		return nil
 	}
 
 	// Linux Desktop File

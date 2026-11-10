@@ -3,7 +3,7 @@
 Because the Gorgeous Installer is designed to handle so many different entry points seamlessly, it operates through several distinct **Execution Modes**. Here is a comprehensive guide to every mode the installer supports, how it is triggered, and its intended use case.
 
 ## 1. Auto-Build Mode (Focus Mode)
-**How it triggers:** By double-clicking a `.uproject` file (or right-clicking and selecting "Build" through OS integration).
+**How it triggers:** By opening a `.uproject` through Gorgeous Installer's registered file association or project workflow. On Windows the app registers an Open with choice; making it the default may require explicit selection in Windows Default apps.
 
 **Behavior:**
 Bypasses the main installer dashboard completely. It evaluates the Unreal project, detects if the binaries are missing or outdated, and instantly opens a dark, centered "Focus Mode" compilation modal. Once compilation finishes successfully, it automatically launches the Unreal Engine Editor and closes itself.
@@ -20,7 +20,7 @@ Day-to-day frictionless workflow for the development team. Developers never have
 Changes the main installer UI to a simplified "Plugin Recompiler" screen. If a project is selected (or passed as an argument), it immediately triggers an automatic compilation of the plugin source code.
 
 **Use Case:**
-Distributing your plugin to the public strictly as Source Code. Instead of hosting gigantic multi-gigabyte ZIP files pre-compiled for Unreal Engine 5.2, 5.3, 5.4, etc., you just ship the tiny source code. The user selects their project, and the installer automatically compiles the plugin locally against whatever engine version they happen to have installed.
+Distributing plugin source and compiling locally against a supported installed engine. Source compatibility and Unreal toolchain requirements still apply; source delivery does not guarantee compatibility with every engine version.
 
 ---
 
@@ -31,7 +31,7 @@ Distributing your plugin to the public strictly as Source Code. Instead of hosti
 Opens the full, premium Fyne application dashboard. Users can navigate the sidebar, tweak settings (like Windows `.uproject` registry file associations), browse for Unreal Engine projects on their hard drive, select specific plugin versions to install, and read update changelogs.
 
 **Use Case:**
-The "First-time User Experience" (FTUE). When a customer buys your plugin, they open this dashboard to marvel at the user interface, locate their Unreal Project, and cleanly install the files natively.
+Locate an Unreal project, inspect its install plan and install the selected payload. Windows also provides per-user self-installation, Start Menu integration and uninstall controls; see [Windows workflows](Windows.md).
 
 ---
 
