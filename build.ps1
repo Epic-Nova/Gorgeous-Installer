@@ -15,6 +15,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+foreach ($tool in @('go', 'gcc')) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        throw "Required tool '$tool' is missing. Install it explicitly before building. This script does not install software."
+    }
+}
 
 # Prepend default Go installation paths to PATH if they exist
 $defaultGoPaths = @("C:\Program Files\Go\bin", "C:\Go\bin")
@@ -24,101 +29,7 @@ foreach ($p in $defaultGoPaths) {
     }
 }
 
-# Ensure Go is installed
-$goInPath = Get-Command go -ErrorAction SilentlyContinue
-if (-not $goInPath) {
-    Write-Host "Go not found. Attempting to install Go via winget..." -ForegroundColor Yellow
-    winget install --id GoLang.Go -e --accept-source-agreements --accept-package-agreements --silent
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install Go. Please install Go manually from https://go.dev/dl/" -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "Go installed successfully" -ForegroundColor Green
-}
-
-# Ensure a GCC toolchain is available for CGO (required by Fyne)
-$gccInPath = Get-Command gcc -ErrorAction SilentlyContinue
-if (-not $gccInPath) {
-    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
-    $winlibsDir = Get-ChildItem $wingetRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "BrechtSanders.WinLibs.POSIX.UCRT_*" } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-
-    if ($winlibsDir) {
-        $mingwBin = Join-Path $winlibsDir.FullName "mingw64\bin"
-        if (Test-Path (Join-Path $mingwBin "gcc.exe")) {
-            $env:PATH = "$mingwBin;" + $env:PATH
-        }
-    }
-}
-
-function Get-MSYS2Path {
-    $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
-    foreach ($drive in $drives) {
-        $candidate = Join-Path $drive "msys64"
-        if (Test-Path $candidate) {
-            return $candidate
-        }
-    }
-
-    $registryPaths = @(
-        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )
-    $regPath = Get-ItemProperty $registryPaths -ErrorAction SilentlyContinue |
-        Where-Object { $_.DisplayName -like "*MSYS2*" } |
-        Select-Object -ExpandProperty InstallLocation -First 1
-
-    if ($regPath -and (Test-Path $regPath)) {
-        return $regPath
-    }
-    return $null
-}
-
-if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    $msysRoot = Get-MSYS2Path
-    if ($msysRoot) {
-        Write-Host "MSYS2 is installed at $msysRoot but gcc was not found. Installing gcc toolchain..." -ForegroundColor Yellow
-        $bashExe = Join-Path $msysRoot "usr\bin\bash.exe"
-        & $bashExe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
-    } else {
-        Write-Host "gcc compiler not found. Attempting to install MSYS2 (gcc toolchain) via winget..." -ForegroundColor Yellow
-        winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements --silent
-        $msysRoot = Get-MSYS2Path
-        if ($msysRoot) {
-            Write-Host "MSYS2 installed successfully at $msysRoot. Installing gcc toolchain..." -ForegroundColor Green
-            $bashExe = Join-Path $msysRoot "usr\bin\bash.exe"
-            & $bashExe -lc "pacman -S --needed --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-toolchain"
-        }
-    }
-    
-    if ($msysRoot) {
-        $msys64Path = Join-Path $msysRoot "mingw64\bin"
-        if (Test-Path (Join-Path $msys64Path "gcc.exe")) {
-            $env:PATH = "$msys64Path;" + $env:PATH
-        }
-    }
-    
-    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
-    $winlibsDir = Get-ChildItem $wingetRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "*mingw*" -or $_.Name -like "*WinLibs*" } |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    
-    if ($winlibsDir) {
-        $mingwBin = Join-Path $winlibsDir.FullName "mingw64\bin"
-        if (Test-Path (Join-Path $mingwBin "gcc.exe")) {
-            $env:PATH = "$mingwBin;" + $env:PATH
-        }
-    }
-}
-
-if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    Write-Host "gcc compiler not found. Install WinLibs or MSYS2 to provide gcc." -ForegroundColor Red
-    exit 1
-}
+# Prerequisites are validated above; installation is an explicit developer action.
 
 $env:CGO_ENABLED = "1"
 $env:CC = "gcc"
@@ -408,15 +319,21 @@ $versionInfo | Add-Member -NotePropertyName "SpecialBuild" -NotePropertyValue $b
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($generatedWinresPath, ($winresObject | ConvertTo-Json -Depth 20), $utf8NoBom)
 
-go build -trimpath -ldflags $ldflags -o $exePath ./cmd/main
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exePath)) {
+Write-Host "Go compiler progress (packages are shown as they compile; linking follows)..." -ForegroundColor Cyan
+$compileTimer = [System.Diagnostics.Stopwatch]::StartNew()
+# Keep native output connected to the PowerShell window so -v streams each package.
+go build -v -trimpath -ldflags $ldflags -o $exePath ./cmd/main
+$compileExitCode = $LASTEXITCODE
+$compileTimer.Stop()
+if ($compileExitCode -ne 0 -or -not (Test-Path $exePath)) {
     Write-Host "Build failed" -ForegroundColor Red
     Pop-Location
     exit 1
 }
+Write-Host ("Compilation and linking completed in {0:N1}s" -f $compileTimer.Elapsed.TotalSeconds) -ForegroundColor Green
 
 Write-Host "Patching executable resources (icon + version info)..." -ForegroundColor Yellow
-go run github.com/tc-hib/go-winres@latest -- patch --in $generatedWinresPath --no-backup $exePath
+go run github.com/tc-hib/go-winres@v0.3.3 -- patch --in $generatedWinresPath --no-backup $exePath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Resource patch failed" -ForegroundColor Red
     Pop-Location

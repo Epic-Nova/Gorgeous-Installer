@@ -2,9 +2,13 @@ package updater
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"gorgeous-installer/internal/safepath"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,31 +104,45 @@ func PerformUpdate(binPath string, installedNatively bool) error {
 		return fmt.Errorf("could not retrieve update info: %v", err)
 	}
 
-	zipPath := filepath.Join(os.TempDir(), "gorgeous-installer-update.zip")
+	parsedURL, err := url.Parse(resp.DownloadUrl)
+	checksum, checksumErr := hex.DecodeString(resp.ChecksumSha256)
+	if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" || parsedURL.User != nil || checksumErr != nil || len(checksum) != sha256.Size {
+		return fmt.Errorf("update missing authenticated SHA-256 or HTTPS URL")
+	}
 
-	// Download ZIP payload
-	out, err := os.Create(zipPath)
-	if err != nil {
+	if resp.DownloadToken != resp.DownloadUrl {
+		return fmt.Errorf("installer release identity must match exact download URL")
+	}
+	if err := VerifyReleaseSignature(resp.DownloadToken, resp.LatestVersion, resp.ChecksumSha256, resp.SignatureEd25519); err != nil {
 		return err
 	}
 
+	// Unique private files avoid clobbering another update or following a planted fixed-name symlink.
+	out, err := os.CreateTemp("", "gorgeous-installer-update-*.zip")
+	if err != nil {
+		return err
+	}
+	zipPath := out.Name()
+	defer os.Remove(zipPath)
+	defer out.Close()
 	httpResp, err := http.Get(resp.DownloadUrl)
 	if err != nil {
-		out.Close()
 		return err
 	}
 	defer httpResp.Body.Close()
-
-	if httpResp.StatusCode >= 400 {
-		out.Close()
+	if httpResp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download update: %s", httpResp.Status)
 	}
-
-	if _, err = io.Copy(out, httpResp.Body); err != nil {
-		out.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(out, hasher), httpResp.Body); err != nil {
 		return err
 	}
-	out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if !strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)), resp.ChecksumSha256) {
+		return fmt.Errorf("update SHA-256 mismatch")
+	}
 
 	if installedNatively {
 		return applyBinaryUpdate(zipPath, binPath)
@@ -264,7 +282,21 @@ func extractZip(src, dest string) error {
 	defer r.Close()
 
 	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive symlinks forbidden")
+		}
+		if _, err := safepath.Inside(dest, f.Name); err != nil {
+			return err
+		}
+	}
+	for _, f := range r.File {
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive symlinks forbidden")
+		}
+		fpath, err := safepath.Inside(dest, f.Name)
+		if err != nil {
+			return err
+		}
 		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
 			continue // Zip slip protection
 		}

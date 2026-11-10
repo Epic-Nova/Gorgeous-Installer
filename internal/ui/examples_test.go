@@ -44,3 +44,41 @@ func TestExampleGUIInstallUsesSelectedVersionAndProjectContent(t *testing.T) {
 		t.Fatalf("wrong payload: %q, %v", data, err)
 	}
 }
+
+func TestGameFeatureGUIInstallDoesNotRequireExistingPlugin(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "Game.uproject")
+	if err := os.WriteFile(project, []byte(`{"EngineAssociation":"5.7"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := filepath.Join(root, "payload")
+	if err := os.MkdirAll(filepath.Join(payload, "Content"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{
+		"SampleFeature.uplugin":          `{"Type":"GameFeature","BuiltInInitialFeatureState":"Active","CanContainContent":true}`,
+		"Content/GameFeatureData.uasset": "fixture",
+	} {
+		if err := os.WriteFile(filepath.Join(payload, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := installer.ValidateExamplePayload("game-feature-example", payload); err != nil {
+		t.Fatal(err)
+	}
+	g := &GUIApp{config: &config.Config{PackName: "SampleFeature", PackType: "game-feature-example", AvailableVersions: []config.PackVersion{{Version: "5.7", Path: payload}}}}
+	plan, err := g.inspectInstallPlan(project, "5.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "Plugins", "GameFeatures", "SampleFeature")
+	if plan.DestinationRoot != want {
+		t.Fatalf("unexpected destination: %s", plan.DestinationRoot)
+	}
+	if err := g.performInstall(context.Background(), project, "5.7", installer.InstallActionInstall, func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(want, "SampleFeature.uplugin")); err != nil {
+		t.Fatal(err)
+	}
+}

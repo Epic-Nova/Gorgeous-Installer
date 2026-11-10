@@ -72,7 +72,9 @@ func (g *GUIApp) buildExamplePublisherPanel(win fyne.Window, appendStatus func(s
 		}
 		if err == nil {
 			packType := "content-example"
-			if kind.Selected == "Game Feature Plugin" { packType = "game-feature-example" } else if kind.Selected == "Project Example" {
+			if kind.Selected == "Game Feature Plugin" {
+				packType = "game-feature-example"
+			} else if kind.Selected == "Project Example" {
 				packType = "project-example"
 			}
 			err = installer.ValidateExamplePayload(packType, dir)

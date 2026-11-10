@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorgeous-installer/internal/config"
+	"gorgeous-installer/internal/safepath"
 	"gorgeous-installer/internal/unreal"
 )
 
@@ -84,6 +85,11 @@ func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 		pluginName = manifest.PluginName
 	}
 
+	// A downloaded package cannot choose a different plugin than the user selected.
+	expectedPlugin := os.Getenv("GORGEOUS_UPDATE_TARGET")
+	if !safepath.PluginName(pluginName) || expectedPlugin == "" || pluginName != expectedPlugin {
+		return fmt.Errorf("update target mismatch: select the target explicitly with --target-plugin")
+	}
 	// Resolve the plugin directory
 	version, enginePath, err := unreal.GetEngineVersionFromProject(projectPath)
 	if err != nil {
@@ -108,16 +114,45 @@ func ProcessZipUpdate(zipPath, projectPath string, pidToWait int) error {
 		return fmt.Errorf("failed to parse UpdateInstructions.json: %w", err)
 	}
 
+	if manifest.PluginName != "" && manifest.PluginName != pluginName {
+		return fmt.Errorf("manifest plugin mismatch")
+	}
+	// Validate the entire transaction before making the first change.
+	for _, inst := range manifest.Instructions {
+		if _, err := safepath.Inside(pluginPath, inst.Target); err != nil {
+			return err
+		}
+		switch strings.ToUpper(inst.Action) {
+		case "DELETE":
+		case "UPDATE", "REPAIR", "INSTALL":
+			if _, err := safepath.Inside(tempDir, inst.Source); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown update action %q", inst.Action)
+		}
+	}
 	fmt.Printf("Applying updates to %s at %s\n", pluginName, pluginPath)
 
 	for _, inst := range manifest.Instructions {
-		targetAbs := filepath.Join(pluginPath, filepath.FromSlash(inst.Target))
-		sourceAbs := filepath.Join(tempDir, filepath.FromSlash(inst.Source))
+		targetAbs, err := safepath.Inside(pluginPath, inst.Target)
+		if err != nil {
+			return err
+		}
+		var sourceAbs string
+		if strings.ToUpper(inst.Action) != "DELETE" {
+			sourceAbs, err = safepath.Inside(tempDir, inst.Source)
+			if err != nil {
+				return err
+			}
+		}
 
 		switch strings.ToUpper(inst.Action) {
 		case "DELETE":
 			fmt.Printf("Deleting %s\n", targetAbs)
-			os.RemoveAll(targetAbs)
+			if err := os.RemoveAll(targetAbs); err != nil {
+				return err
+			}
 		case "UPDATE", "REPAIR", "INSTALL":
 			fmt.Printf("%s %s\n", inst.Action, targetAbs)
 			if err := copyFileOrDir(sourceAbs, targetAbs); err != nil {
@@ -188,7 +223,21 @@ func extractZip(src, dest string) error {
 	defer r.Close()
 
 	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive symlinks forbidden")
+		}
+		if _, err := safepath.Inside(dest, f.Name); err != nil {
+			return err
+		}
+	}
+	for _, f := range r.File {
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive symlinks forbidden")
+		}
+		fpath, err := safepath.Inside(dest, f.Name)
+		if err != nil {
+			return err
+		}
 		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
 			return fmt.Errorf("illegal file path: %s", fpath)
 		}

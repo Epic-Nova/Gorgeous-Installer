@@ -11,6 +11,7 @@ import (
 	"gorgeous-installer/internal/buildinfo"
 	"gorgeous-installer/internal/settings"
 	"gorgeous-installer/internal/updater"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -24,6 +25,20 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		appendStatus("Failed to load settings: %v", err)
 		appSettings = settings.DefaultSettings()
 	}
+
+	networkCheck := widget.NewCheck("Allow Gorgeous API access (news, catalog, updates)", func(allowed bool) {
+		appSettings.AllowNetwork = allowed
+		appSettings.NetworkConsentDecided = true
+		if allowed {
+			os.Setenv("GORGEOUS_ALLOW_NETWORK", "1")
+		} else {
+			os.Unsetenv("GORGEOUS_ALLOW_NETWORK")
+		}
+		_ = settings.SaveSettings(appSettings)
+	})
+	networkCheck.SetChecked(appSettings.AllowNetwork)
+	privacyURL, _ := url.Parse("https://epicnova.net/legal/privacy-policy/long")
+	networkSection := newGTCard("Network and privacy", "Consent is stored for this user; --offline overrides it", container.NewVBox(networkCheck, widget.NewHyperlink("Privacy policy", privacyURL)))
 
 	// Paths list
 	pathsVBox := container.NewVBox()
@@ -109,13 +124,12 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 		isDev = appSettings.BinDevMode
 	}
 
-	forceHttpCheck := widget.NewCheck("Force HTTP (Local Testing)", func(b bool) {
-		appSettings.ForceHTTP = b
-	})
-	forceHttpCheck.SetChecked(appSettings.ForceHTTP)
-	if !isDev {
-		forceHttpCheck.Hide()
-	}
+    // Legacy preference is ignored: production connections always require TLS.
+    appSettings.ForceHTTP=false
+    forceHttpCheck:=widget.NewCheck("HTTPS is required",nil)
+    forceHttpCheck.SetChecked(true)
+    forceHttpCheck.Disable()
+    forceHttpCheck.Hide()
 
 	updateDevUI := func() {
 		anyDev := appSettings.DevMode || appSettings.BinDevMode
@@ -156,7 +170,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 	binDevModeCheck.SetChecked(appSettings.BinDevMode)
 
 	devHelpBtn := widget.NewButtonWithIcon("", theme.QuestionIcon(), func() {
-		g.showAnimatedDialog("Developer Mode", "Enabling Developer Mode allows testing HTTP connections and reveals the Publisher Menu.\n\nWhen enabled on a local codebase, Installer Source Updates are disabled to prevent overwriting your local edits.", false)
+		g.showAnimatedDialog("Developer Mode", "Enabling Developer Mode reveals the Publisher Menu. API connections require HTTPS and separate network consent.\n\nWhen enabled on a local codebase, Installer Source Updates are disabled to prevent overwriting your local edits.", false)
 	})
 
 	devVBox := container.NewVBox(
@@ -246,6 +260,7 @@ func (g *GUIApp) buildSettingsPanel(win fyne.Window, appendStatus func(string, .
 	})
 
 	content := container.NewVBox(
+		networkSection,
 		updateSection,
 		pathsSection,
 		installerSection,
