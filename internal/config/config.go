@@ -11,7 +11,7 @@ import (
 type Config struct {
 	PackName          string        `json:"packName"`
 	PluginName        string        `json:"pluginName"`
-	PackType          string        `json:"packType"` // content, code, hybrid, content-example, or project-example
+	PackType          string        `json:"packType"` // content, code, hybrid, content-example, project-example, or game-feature-example
 	InstallPath       string        `json:"installPath"`
 	AvailableVersions []PackVersion `json:"availableVersions"`
 	ContentData       []byte        `json:"-"` // Embedded content/code pack
@@ -71,5 +71,5 @@ func (c *Config) SaveConfig(filepath string) error {
 
 // IsExamplePack identifies standalone examples, which never target plugin folders.
 func IsExamplePack(packType string) bool {
-	return packType == "content-example" || packType == "project-example"
+	return packType == "content-example" || packType == "project-example" || packType == "game-feature-example"
 }

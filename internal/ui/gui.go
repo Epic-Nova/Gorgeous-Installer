@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1238,6 +1239,23 @@ func (g *GUIApp) Run() {
 	}
 
 	appSettings, _ := settings.LoadSettings()
+	if os.Getenv("GORGEOUS_ALLOW_NETWORK") == "" && appSettings.AllowNetwork {
+		os.Setenv("GORGEOUS_ALLOW_NETWORK", "1")
+	}
+	if !appSettings.NetworkConsentDecided && os.Getenv("GORGEOUS_ALLOW_NETWORK") != "1" && os.Getenv("GORGEOUS_OFFLINE") != "1" {
+		privacyURL, _ := url.Parse("https://epicnova.net/legal/privacy-policy/long")
+		content := container.NewVBox(widget.NewLabel("Allow HTTPS API access for news, catalog and updates?"), widget.NewHyperlink("Privacy policy", privacyURL))
+		dialog.ShowCustomConfirm("Gorgeous API access", "Allow", "Stay offline", content, func(allow bool) {
+			appSettings.AllowNetwork = allow
+			appSettings.NetworkConsentDecided = true
+			if allow {
+				os.Setenv("GORGEOUS_ALLOW_NETWORK", "1")
+			} else {
+				os.Unsetenv("GORGEOUS_ALLOW_NETWORK")
+			}
+			_ = settings.SaveSettings(appSettings)
+		}, g.win)
+	}
 
 	// Determine DevMode based on context
 	isDev := appSettings.DevMode
@@ -1245,14 +1263,9 @@ func (g *GUIApp) Run() {
 		isDev = appSettings.BinDevMode
 	}
 
-	// Apply ForceHTTP setting
-	if appSettings.ForceHTTP {
-		api.BaseURL = "http://api.gorgeous.simsalabim.studio/api/v1"
-		api.IsDevMode = true
-		api.IsOffline = false
-	} else if isDev {
-		api.IsDevMode = true
-	}
+	// Production API access never downgrades transport security.
+	api.BaseURL = "https://api.gorgeous.simsalabim.studio/api/v1"
+	api.IsDevMode = isDev
 
 	// The source bin should never get updates when in dev mode
 	skipUpdateCheck := isDev && !appSettings.InstalledNatively
@@ -1404,9 +1417,9 @@ func (g *GUIApp) Run() {
 				})
 				return
 			}
-			pluginPath, err := unreal.LocatePluginByName(filepath.Dir(g.ProjectPath), enginePath, g.config.PackName)
+			pluginPath, err := unreal.LocatePluginByName(filepath.Dir(g.ProjectPath), enginePath, g.config.PluginName)
 			if err != nil {
-				pluginPath = filepath.Join(filepath.Dir(g.ProjectPath), "Plugins", "GorgeousThings", g.config.PackName)
+				pluginPath = filepath.Join(filepath.Dir(g.ProjectPath), "Plugins", g.config.PluginName)
 			}
 			fyne.Do(func() {
 				appendStatus("Starting recompilation: PluginPath=%s, EnginePath=%s, ProjectPath=%s", pluginPath, enginePath, g.ProjectPath)
@@ -2566,7 +2579,7 @@ func (g *GUIApp) inspectInstallPlan(projectPath, selectedVersion string) (*insta
 		enginePath = ""
 	}
 	pluginNameForSearch := g.config.PluginName
-	if pluginNameForSearch == "" {
+	if pluginNameForSearch == "" && config.IsExamplePack(g.config.PackType) {
 		pluginNameForSearch = g.config.PackName
 	}
 	pluginPath := ""
@@ -2575,7 +2588,7 @@ func (g *GUIApp) inspectInstallPlan(projectPath, selectedVersion string) (*insta
 	}
 	if err != nil {
 		if g.config.PackType == "hybrid" {
-			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", "GorgeousThings", pluginNameForSearch)
+			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", pluginNameForSearch)
 		} else {
 			if detectErr != nil {
 				return nil, fmt.Errorf("failed to locate plugin %q in project plugins after engine detection failure: %w", pluginNameForSearch, err)
@@ -2602,7 +2615,7 @@ func (g *GUIApp) performInstall(ctx context.Context, projectPath, selectedVersio
 	}
 
 	pluginNameForSearch := g.config.PluginName
-	if pluginNameForSearch == "" {
+	if pluginNameForSearch == "" && config.IsExamplePack(g.config.PackType) {
 		pluginNameForSearch = g.config.PackName
 	}
 	pluginPath := ""
@@ -2614,7 +2627,7 @@ func (g *GUIApp) performInstall(ctx context.Context, projectPath, selectedVersio
 		if g.config.PackType == "hybrid" {
 			// Fallback: This might be a brand new plugin installation.
 			// Default to placing it in Plugins/GorgeousThings/<PackName>
-			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", "GorgeousThings", pluginNameForSearch)
+			pluginPath = filepath.Join(filepath.Dir(projectPath), "Plugins", pluginNameForSearch)
 			appendStatus("Plugin %q not found locally. Preparing to install into: %s", pluginNameForSearch, pluginPath)
 		} else {
 			if detectErr != nil {

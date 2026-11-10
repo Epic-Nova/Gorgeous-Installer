@@ -68,11 +68,13 @@ func (g *GUIApp) showOfflinePublisherDialog(win fyne.Window, publishMode string,
 }
 
 func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions []versionEntry, installerPath string, sysVer string, outDir string, manifest *SystemManifest, appendStatus func(string, ...any)) {
-	isExample := publishMode == "Content Example" || publishMode == "Project Example"
+	isExample := publishMode == "Content Example" || publishMode == "Project Example" || publishMode == "Game Feature Plugin"
 	if isExample {
 		packType := "content-example"
 		if publishMode == "Project Example" {
 			packType = "project-example"
+		} else if publishMode == "Game Feature Plugin" {
+			packType = "game-feature-example"
 		}
 		if manifest == nil || len(versions) == 0 {
 			fyne.Do(func() { dialog.ShowError(fmt.Errorf("example name and version mappings are required"), win) })
@@ -237,7 +239,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 			// For Installer updates, we don't need a manifest file on disk. We just use the provided one.
 			localManifest = *manifest
 			localManifest.PayloadPaths = []string{"."}
-		} else if publishMode == "Content Example" || publishMode == "Project Example" {
+		} else if isExample {
 			localManifest = *manifest
 			localManifest.PayloadPaths = []string{"."}
 		} else if publishMode == "Plugin Update" {
@@ -275,7 +277,7 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 			vPluginRoot = parent
 		}
 
-		if publishMode == "Content Example" || publishMode == "Project Example" {
+		if isExample {
 			vPluginRoot = v.sourcePath
 		}
 
@@ -387,6 +389,9 @@ func (g *GUIApp) runOfflinePublish(win fyne.Window, publishMode string, versions
 		cfg.InstallPath = "Content"
 	} else if publishMode == "Project Example" {
 		cfg.PackType = "project-example"
+		cfg.PluginName = ""
+	} else if publishMode == "Game Feature Plugin" {
+		cfg.PackType = "game-feature-example"
 		cfg.PluginName = ""
 	}
 	cfgData, _ := json.MarshalIndent(cfg, "", "  ")

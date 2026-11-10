@@ -21,29 +21,21 @@ var (
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 )
 
-func init() {
-	// Probe for dev mode fallback
-	resp, err := http.Get("https://api.gorgeous.simsalabim.studio/")
-	if err != nil || resp.TLS == nil {
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
-		// Try HTTP
-		resp, err = http.Get("http://api.gorgeous.simsalabim.studio/")
-		if err == nil {
-			if resp.Body != nil {
-				resp.Body.Close()
-			}
-			BaseURL = "http://api.gorgeous.simsalabim.studio/api/v1"
-			IsDevMode = true
-		} else {
-			IsOffline = true
-		}
-	} else {
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
+// No import-time probes or TLS downgrade. Consent is checked at every request.
+type consentTransport struct{}
+
+func (consentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if os.Getenv("GORGEOUS_OFFLINE") == "1" || os.Getenv("GORGEOUS_ALLOW_NETWORK") != "1" {
+		return nil, fmt.Errorf("Gorgeous API access is disabled; enable it explicitly")
 	}
+	if req.URL.Scheme != "https" {
+		return nil, fmt.Errorf("Gorgeous API requires HTTPS")
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+func init() {
+	httpClient.Transport = consentTransport{}
+	http.DefaultClient = &http.Client{Timeout: 30 * time.Second, Transport: consentTransport{}}
 }
 
 // GenerateSoftLicenseHash computes md5(BaseHash + Salt)
@@ -54,11 +46,13 @@ func GenerateSoftLicenseHash(baseHash, salt string) string {
 }
 
 type InstallerUpdateResponse struct {
-	UpdateAvailable bool   `json:"UpdateAvailable"`
-	LatestVersion   string `json:"LatestVersion"`
-	DownloadUrl     string `json:"DownloadUrl"`
-	ReleaseNotes    string `json:"ReleaseNotes"`
-	ChecksumSha256  string `json:"ChecksumSha256"`
+	DownloadToken    string `json:"DownloadToken"`
+	SignatureEd25519 string `json:"SignatureEd25519"`
+	UpdateAvailable  bool   `json:"UpdateAvailable"`
+	LatestVersion    string `json:"LatestVersion"`
+	DownloadUrl      string `json:"DownloadUrl"`
+	ReleaseNotes     string `json:"ReleaseNotes"`
+	ChecksumSha256   string `json:"ChecksumSha256"`
 }
 
 func CheckInstallerUpdate(updateType string, currentVersion string) (*InstallerUpdateResponse, error) {
@@ -300,11 +294,17 @@ func PromoteSystemVersion(systemId, version string) error {
 }
 
 type SystemVersionItem struct {
-	Version        string `json:"Version"`
-	IsMasterUpdate bool   `json:"IsMasterUpdate"`
+	DownloadToken    string `json:"DownloadToken"`
+	ChecksumSha256   string `json:"ChecksumSha256"`
+	SignatureEd25519 string `json:"SignatureEd25519"`
+	Version          string `json:"Version"`
+	IsMasterUpdate   bool   `json:"IsMasterUpdate"`
 }
 
 type SystemItem struct {
+	DownloadToken      string              `json:"DownloadToken"`
+	ChecksumSha256     string              `json:"ChecksumSha256"`
+	SignatureEd25519   string              `json:"SignatureEd25519"`
 	SystemId           string              `json:"SystemId"`
 	TargetPluginName   string              `json:"TargetPluginName"`
 	DisplayName        string              `json:"DisplayName"`

@@ -24,6 +24,8 @@ func OpenProject(uprojectPath string) error {
 	}
 
 	editorBin := filepath.Join(enginePath, "Engine", "Binaries", "Linux", "UnrealEditor")
+    if runtime.GOOS=="windows" { editorBin=filepath.Join(enginePath,"Engine","Binaries","Win64","UnrealEditor.exe") }
+    if runtime.GOOS=="darwin" { editorBin=filepath.Join(enginePath,"Engine","Binaries","Mac","UnrealEditor.app","Contents","MacOS","UnrealEditor") }
 	if _, err := os.Stat(editorBin); err != nil {
 		return fmt.Errorf("UnrealEditor not found at %s", editorBin)
 	}

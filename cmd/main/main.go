@@ -38,7 +38,7 @@ func main() {
 	cliMode := flag.Bool("cli", false, "Run in CLI mode")
 	guiMode := flag.Bool("gui", false, "Run in GUI mode")
 	projectPath := flag.String("project", "", "Path to .uproject file or project directory")
-	packType := flag.String("type", "", "Pack type: content, code, hybrid, content-example, or project-example")
+	packType := flag.String("type", "", "Pack type: content, code, hybrid, content-example, project-example, or game-feature-example")
 	packVersion := flag.String("version", "", "Pack version to install or validate")
 	engineVersion := flag.String("engine-version", "", "Engine version used for pack selection (for install or SHA validation)")
 	installAction := flag.String("action", "", "Install action: install, update, or reinstall")
@@ -52,7 +52,19 @@ func main() {
 	reopenProject := flag.Bool("reopen-project", false, "Reopen the Unreal Editor project after successful compilation/installation")
 	regenerateProject := flag.Bool("regenerate-project", false, "Regenerate project files and recompile plugin")
 	showBuildInfo := flag.Bool("version-info", false, "Print build metadata and exit")
+	targetPlugin := flag.String("target-plugin", "", "Explicit plugin selected for a ZIP update")
+	allowNetwork := flag.Bool("allow-network", false, "Allow HTTPS API access for this invocation")
+	offline := flag.Bool("offline", false, "Disable all API access")
 	flag.Parse()
+	if *targetPlugin != "" {
+		os.Setenv("GORGEOUS_UPDATE_TARGET", *targetPlugin)
+	}
+	if *allowNetwork {
+		os.Setenv("GORGEOUS_ALLOW_NETWORK", "1")
+	}
+	if *offline {
+		os.Setenv("GORGEOUS_OFFLINE", "1")
+	}
 
 	if *showBuildInfo {
 		fmt.Println(buildinfo.Summary())

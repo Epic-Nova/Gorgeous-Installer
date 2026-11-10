@@ -11,14 +11,16 @@ import (
 
 // AppSettings holds the persistent configuration for the Gorgeous Installer.
 type AppSettings struct {
-	SearchPaths         []string `json:"searchPaths"`
-	LocalBinPath        string   `json:"localBinPath"`
-	InstalledNatively   bool     `json:"installedNatively"`
-	UprojectAssociated  bool     `json:"uprojectAssociated"`
-	PrevUprojectCommand string   `json:"prevUprojectCommand"`
-	DevMode             bool     `json:"devMode"`
-	BinDevMode          bool     `json:"binDevMode"`
-	ForceHTTP           bool     `json:"forceHTTP"`
+	AllowNetwork          bool     `json:"allowNetwork"`
+	NetworkConsentDecided bool     `json:"networkConsentDecided"`
+	SearchPaths           []string `json:"searchPaths"`
+	LocalBinPath          string   `json:"localBinPath"`
+	InstalledNatively     bool     `json:"installedNatively"`
+	UprojectAssociated    bool     `json:"uprojectAssociated"`
+	PrevUprojectCommand   string   `json:"prevUprojectCommand"`
+	DevMode               bool     `json:"devMode"`
+	BinDevMode            bool     `json:"binDevMode"`
+	ForceHTTP             bool     `json:"forceHTTP"`
 }
 
 // ConfigFilePath returns the path to the settings JSON file.

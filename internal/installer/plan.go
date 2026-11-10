@@ -72,7 +72,7 @@ func (i *Installer) BuildInstallPlan() (*InstallPlan, error) {
 		return nil, fmt.Errorf("pack path contains no files: %s", sourceRoot)
 	}
 
-	if err := validateExampleFiles(i.PackType, sourceFiles); err != nil {
+	if err := validateExampleFiles(i.PackType, sourceRoot, sourceFiles); err != nil {
 		return nil, err
 	}
 	plan := &InstallPlan{
@@ -137,6 +137,20 @@ func (i *Installer) BuildInstallPlan() (*InstallPlan, error) {
 
 func (i *Installer) resolveDestinationRootForPackType() (string, error) {
 	switch strings.ToLower(strings.TrimSpace(i.PackType)) {
+	case "game-feature-example":
+		projectFile, err := resolveProjectFilePath(i.ProjectPath)
+		if err != nil {
+			return "", err
+		}
+		files, err := listPackFiles(normalizePackRoot(i.PackVersion.Path))
+		if err != nil {
+			return "", err
+		}
+		name, err := validateGameFeaturePayload(normalizePackRoot(i.PackVersion.Path), files)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(filepath.Dir(projectFile), "Plugins", "GameFeatures", name), nil
 	case "content-example":
 		projectFile, err := resolveProjectFilePath(i.ProjectPath)
 		if err != nil {
@@ -403,10 +417,14 @@ func ValidateExamplePayload(packType, root string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("example payload contains no files")
 	}
-	return validateExampleFiles(packType, files)
+	return validateExampleFiles(packType, root, files)
 }
 
-func validateExampleFiles(packType string, files []string) error {
+func validateExampleFiles(packType, root string, files []string) error {
+	if packType == "game-feature-example" {
+		_, err := validateGameFeaturePayload(root, files)
+		return err
+	}
 	projectFiles := 0
 	for _, rel := range files {
 		first := strings.Split(filepath.ToSlash(rel), "/")[0]
