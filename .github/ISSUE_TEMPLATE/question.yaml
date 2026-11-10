@@ -1,0 +1,57 @@
+name: Question
+description: A question about Gorgeous Installer.
+title: "[Question]: "
+labels:
+assignees:
+  - Epgenix
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reaching out with your question about **Gorgeous Installer**!  
+        We’re here to assist and make sure you have a smooth experience with Unreal Engine development. Feel free to ask anything! 💬🎮
+
+  - type: input
+    id: question-summary
+    attributes:
+      label: 📌 Question Summary
+      description: Briefly describe the question or issue you're encountering.
+      placeholder: ex. How can I dynamically load modules using Gorgeous Installer at runtime?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 🧠 Context
+      description: Why are you asking this question? What are you trying to achieve?
+      placeholder: ex. I'm building a game where different modules need to be loaded dynamically based on player choices and would like to know the best way to achieve that with Gorgeous Installer.
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: 🛠️ Approach / Attempts
+      description: What have you tried so far? Describe any attempts, solutions, or workarounds you’ve tried, or if you need suggestions for a specific implementation.
+      placeholder: ex. I’ve tried manually using `FModuleManager::LoadModule()` but ran into issues when trying to call functions from those modules.
+
+  - type: textarea
+    id: additional-info
+    attributes:
+      label: 💡 Additional Information
+      description: Any extra details that could help us assist you better? Add relevant code snippets, error messages, screenshots, or any additional context that could clarify the situation.
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 🔗 References
+      description: Are there any resources you’ve looked at or tools you're currently using? Add links, documentation, or references to similar problems you've encountered or existing solutions.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 📜 Code of Conduct
+      description: |
+        Thanks for helping improve Gorgeous Installer! 🙌
+        By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/Epic-Nova/Gorgeous-Installer/blob/master/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
