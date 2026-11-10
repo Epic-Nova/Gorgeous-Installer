@@ -161,11 +161,16 @@ func applySourceUpdate(zipPath string, sourceDir string) error {
 func applyBinaryUpdate(zipPath string, binPath string) error {
 	// We extract the ZIP (which contains the contents of the /build dir) to a temp dir.
 	// Then we locate the correct executable for the OS and replace binPath.
-	tempExtractDir := filepath.Join(os.TempDir(), "gorgeous-installer-extracted")
-	os.RemoveAll(tempExtractDir)
-	if err := os.MkdirAll(tempExtractDir, 0755); err != nil {
+	tempExtractDir, err := os.MkdirTemp("", "gorgeous-installer-extracted-*")
+	if err != nil {
 		return err
 	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			_ = os.RemoveAll(tempExtractDir)
+		}
+	}()
 
 	if err := extractZip(zipPath, tempExtractDir); err != nil {
 		return err
@@ -195,47 +200,25 @@ func applyBinaryUpdate(zipPath string, binPath string) error {
 		currentExe = binPath
 	}
 
-	// Create update script to swap running binary
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-
-	var scriptPath string
 	if runtime.GOOS == "windows" {
-		scriptPath = filepath.Join(home, "gorgeous-update.bat")
-		scriptContent := fmt.Sprintf(`@echo off
-timeout /t 2 /nobreak >nul
-2>"%s" copy /y "%s" "%s"
-if %%errorlevel%% == 0 (
-    del /f "%s" 2>nul
-    start "" "%s"
-) else (
-    start "" "%s"
-)
-del "%s" 2>nul
-rmdir /s /q "%s" 2>nul
-del "%%~f0"
-`,
-			errFilePath,
-			extractedExe, binPath,
-			errFilePath,
-			binPath,
-			currentExe,
-			zipPath,
-			tempExtractDir,
-		)
-		if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		cmd, err := windowsBinaryUpdateCommand(binaryUpdateHandoff{
+			ParentPID: os.Getpid(), Source: extractedExe, Destination: binPath,
+			Fallback: currentExe, ErrorPath: errFilePath, StageDirectory: tempExtractDir,
+		})
+		if err != nil {
 			return err
 		}
-		cmd := exec.Command("cmd", "/c", scriptPath)
-		return cmd.Start()
-	} else {
-		// Ensure directory exists
-		shareDir := filepath.Join(home, ".local", "share")
-		os.MkdirAll(shareDir, 0755)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("start update helper: %w", err)
+		}
+		handedOff = true
+		go func() { _ = cmd.Wait() }()
+		return nil
+	}
 
-		scriptPath = filepath.Join(shareDir, "gorgeous-update.sh")
+	// Linux keeps its existing shell handoff in this update's private staging directory.
+	{
+		scriptPath := filepath.Join(tempExtractDir, "gorgeous-update.sh")
 		scriptContent := fmt.Sprintf(`#!/bin/bash
 sleep 2
 cp "%s" "%s" 2>"%s"
@@ -270,7 +253,12 @@ fi
 			return err
 		}
 		cmd := exec.Command("bash", scriptPath)
-		return cmd.Start()
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		handedOff = true
+		go func() { _ = cmd.Wait() }()
+		return nil
 	}
 }
 

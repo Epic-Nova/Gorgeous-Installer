@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"gorgeous-installer/internal/processcontrol"
 	"io"
 	"os"
 	"os/exec"
@@ -125,8 +126,8 @@ func (i *Installer) Install() error {
 	}
 
 	switch i.PackType {
- case "game-feature-example":
-  return i.installGameFeature()
+	case "game-feature-example":
+		return i.installGameFeature()
 	case "content", "content-example", "project-example":
 		return i.installContentPack()
 	case "code":
@@ -410,7 +411,7 @@ func (i *Installer) runCommandWithLog(cmd *exec.Cmd) error {
 
 	i.logf("Running build command: %s", strings.Join(cmd.Args, " "))
 
-	if err := cmd.Start(); err != nil {
+	if err := processcontrol.Start(cmd); err != nil {
 		if ctxErr := i.commandContext().Err(); ctxErr != nil {
 			return ctxErr
 		}
@@ -443,7 +444,7 @@ func (i *Installer) runCommandWithLog(cmd *exec.Cmd) error {
 	go stream(stderrPipe, &wg)
 
 	wg.Wait()
-	if err := cmd.Wait(); err != nil {
+	if err := processcontrol.Wait(cmd); err != nil {
 		if ctxErr := i.commandContext().Err(); ctxErr != nil {
 			return ctxErr
 		}

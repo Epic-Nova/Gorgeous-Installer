@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"gorgeous-installer/internal/processcontrol"
 )
 
 // OpenProject launches the Unreal Editor for the given project in the background.
@@ -78,7 +80,7 @@ func GenerateProjectFiles(ctx context.Context, uprojectPath string, logFn func(s
 	}
 	cmd.Stderr = cmd.Stdout
 
-	if err := cmd.Start(); err != nil {
+	if err := processcontrol.Start(cmd); err != nil {
 		return fmt.Errorf("GenerateProjectFiles failed to start: %w", err)
 	}
 
@@ -90,7 +92,7 @@ func GenerateProjectFiles(ctx context.Context, uprojectPath string, logFn func(s
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
+	if err := processcontrol.Wait(cmd); err != nil {
 		return fmt.Errorf("GenerateProjectFiles failed: %w", err)
 	}
 
@@ -171,7 +173,7 @@ func BuildProject(ctx context.Context, uprojectPath string, logFn func(string, .
 	}
 	cmd.Stderr = cmd.Stdout
 
-	if err := cmd.Start(); err != nil {
+	if err := processcontrol.Start(cmd); err != nil {
 		return fmt.Errorf("build failed to start: %w", err)
 	}
 
@@ -183,7 +185,7 @@ func BuildProject(ctx context.Context, uprojectPath string, logFn func(string, .
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
+	if err := processcontrol.Wait(cmd); err != nil {
 		return fmt.Errorf("build failed: %w", err)
 	}
 
@@ -191,13 +193,7 @@ func BuildProject(ctx context.Context, uprojectPath string, logFn func(string, .
 	return nil
 }
 
-// KillUBT forcefully kills any running instances of UnrealBuildTool
+// KillUBT cancels only build process trees started by this installer.
 func KillUBT() {
-	if runtime.GOOS == "windows" {
-		exec.Command("taskkill", "/F", "/IM", "dotnet.exe").Run()
-		exec.Command("taskkill", "/F", "/IM", "UnrealBuildTool.exe").Run()
-	} else {
-		exec.Command("pkill", "-9", "-f", "UnrealBuildTool").Run()
-		exec.Command("pkill", "-9", "-f", "dotnet").Run()
-	}
+	processcontrol.StopAll()
 }

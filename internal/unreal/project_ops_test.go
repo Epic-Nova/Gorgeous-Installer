@@ -54,7 +54,19 @@ func TestGenerateProjectFilesInstalledEngine(t *testing.T) {
 	if engine == "" || runtime.GOOS != "windows" {
 		t.Skip("set GORGEOUS_TEST_ENGINE_PATH to run the native Windows Unreal check")
 	}
-	root := filepath.Join(t.TempDir(), "Installer Project With Spaces")
+	base := t.TempDir()
+	if testRoot := os.Getenv("GORGEOUS_TEST_PROJECT_ROOT"); testRoot != "" {
+		if err := os.MkdirAll(testRoot, 0755); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		base, err = os.MkdirTemp(testRoot, "smoke-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(base) })
+	}
+	root := filepath.Join(base, "Project With Spaces")
 	if err := os.MkdirAll(filepath.Join(root, "Source", "InstallerSmoke"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -81,5 +93,15 @@ func TestGenerateProjectFilesInstalledEngine(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "InstallerSmoke.sln")); err != nil {
 		t.Fatalf("project solution was not generated: %v", err)
+	}
+	if os.Getenv("GORGEOUS_TEST_COMPILE_PROJECT") == "1" {
+		buildCtx, stopBuild := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer stopBuild()
+		if err := BuildProject(buildCtx, filepath.Join(root, "InstallerSmoke.uproject"), t.Logf); err != nil {
+			t.Fatal(err)
+		}
+		if !CheckProjectBinaries(filepath.Join(root, "InstallerSmoke.uproject")) {
+			t.Fatal("built editor module does not match the engine")
+		}
 	}
 }
