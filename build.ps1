@@ -94,6 +94,47 @@ function Get-DefaultManifestPath {
     return "$baseDir/manifest.sha256"
 }
 
+function Get-PackRelativePath {
+    param([string]$Root, [string]$FilePath)
+
+    # Windows PowerShell5 uses .NET Framework, which has no Path.GetRelativePath.
+    $normalizedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd([char[]]'\/') + [System.IO.Path]::DirectorySeparatorChar
+    $normalizedFile = [System.IO.Path]::GetFullPath($FilePath)
+    $comparison = [System.StringComparison]::Ordinal
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $comparison = [System.StringComparison]::OrdinalIgnoreCase
+    }
+    if (-not $normalizedFile.StartsWith($normalizedRoot, $comparison)) {
+        throw "Pack file is outside the selected pack root: $FilePath"
+    }
+    return $normalizedFile.Substring($normalizedRoot.Length).Replace([char]92, [char]47)
+}
+
+function Get-InstallerRuntimeVersion {
+    param($Winres)
+
+    $resource = $Winres.RT_VERSION."#1"."0000"
+    $friendly = ([string]$resource.info."0409".ProductVersion).Trim() -replace '^v(?=\d)', ''
+    $fixed = ([string]$resource.fixed.product_version).Trim()
+    $validNamed = '^(?:Dev[.-])?\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?$'
+    $validNumeric = '^\d+(?:\.\d+){1,3}$'
+    $version = $null
+    if ($friendly -match $validNamed -and $friendly -match '(?i)Dev|[-+]') {
+        $version = $friendly
+    } elseif ($fixed -match $validNumeric) {
+        $version = $fixed
+    } elseif ($friendly -match $validNamed) {
+        $version = $friendly
+    } else {
+        foreach ($candidate in @([string]$resource.info."0409".FileVersion, [string]$resource.fixed.file_version)) {
+            if ($candidate -match $validNumeric) { $version = $candidate; break }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($version)) { throw "winres.json has no valid product/file version" }
+    if ($version -match '^\d+\.\d+\.\d+\.0$') { $version = $version.Substring(0, $version.Length - 2) }
+    return $version
+}
+
 function New-PackSHAManifest {
     param(
         [string]$PackRoot,
@@ -116,7 +157,7 @@ function New-PackSHAManifest {
     $lines = New-Object System.Collections.Generic.List[string]
     foreach ($file in $files) {
         $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        $rel = [System.IO.Path]::GetRelativePath($resolvedPackRoot, $file.FullName)
+        $rel = Get-PackRelativePath -Root $resolvedPackRoot -FilePath $file.FullName
         $rel = $rel -replace "\\", "/"
         $lines.Add("$hash  $rel") | Out-Null
     }
@@ -126,7 +167,7 @@ function New-PackSHAManifest {
         New-Item -ItemType Directory -Path $manifestDir -Force | Out-Null
     }
 
-    Set-Content -Path $ManifestPath -Value $lines -Encoding Ascii
+    [System.IO.File]::WriteAllLines($ManifestPath, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
 }
 
 function Resolve-UPXExecutable {
@@ -259,7 +300,7 @@ foreach ($packVersion in $configData.availableVersions) {
 }
 
 if ($configUpdated) {
-    $configData | ConvertTo-Json -Depth 20 | Set-Content -Path "config.json" -Encoding UTF8
+    [System.IO.File]::WriteAllText((Join-Path $scriptDir "config.json"), ($configData | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Updated config.json with generated shaFile entries" -ForegroundColor Green
 }
 
@@ -280,7 +321,7 @@ Write-Host "Compiling executable..." -ForegroundColor Yellow
 $gitCommit = "unknown"
 $gitCommitFull = ""
 try {
-    $gitCommitFull = (git rev-parse HEAD 2>$null).Trim()
+    $gitCommitFull = (git --work-tree $scriptDir rev-parse HEAD 2>$null).Trim()
     if ($LASTEXITCODE -eq 0 -and $gitCommitFull) {
         $gitCommit = $gitCommitFull
     }
@@ -289,6 +330,8 @@ try {
 }
 
 $buildTimeUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+$winresObject = Get-Content (Join-Path $scriptDir "winres.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$runtimeVersion = Get-InstallerRuntimeVersion $winresObject
 $buildInfoDirectory = Join-Path $scriptDir "internal\\buildinfo"
 $buildInfoPath = Join-Path $buildInfoDirectory "buildinfo.go"
 New-Item -ItemType Directory -Path $buildInfoDirectory -Force | Out-Null
@@ -297,7 +340,7 @@ $buildInfoSource = @"
 package buildinfo
 
 const (
-    Version   = "1.0.0"
+    Version   = "$runtimeVersion"
     GitCommit = "$gitCommit"
     BuildTime = "$buildTimeUtc"
     Platform  = "Windows_amd64"
@@ -311,7 +354,6 @@ func Summary() string {
 
 $ldflags = "-s -w -buildid= -H windowsgui"
 
-$winresObject = Get-Content "winres.json" -Raw | ConvertFrom-Json
 $versionInfo = $winresObject.RT_VERSION."#1"."0000".info."0409"
 $versionInfo | Add-Member -NotePropertyName "Comments" -NotePropertyValue "Commit $gitCommit" -Force
 $versionInfo | Add-Member -NotePropertyName "PrivateBuild" -NotePropertyValue $gitCommit -Force
@@ -417,13 +459,14 @@ $signaturePayload -join "`n" | Set-Content -Path $sigPath -Encoding Ascii
 $goVersion = (go version).Trim()
 $meta = [ordered]@{
     file = "gorgeous-installer.exe"
+    version = $runtimeVersion
     sha256 = $sha256
     commit = $gitCommit
     buildTimeUtc = $buildTimeUtc
     goVersion = $goVersion
     signed = [bool]$Sign
 }
-$meta | ConvertTo-Json -Depth 5 | Set-Content -Path $metaPath -Encoding UTF8
+[System.IO.File]::WriteAllText($metaPath, ($meta | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 
 $fileSize = (Get-Item $exePath).Length
 $fileSizeMB = [math]::Round($fileSize / 1MB, 2)
@@ -437,7 +480,7 @@ Write-Host "Metadata: $metaPath" -ForegroundColor Green
 Write-Host ""
 
 if ($TestSHAComparison) {
-    $shaTestScript = Join-Path $scriptDir "test-sha-comparison.ps1"
+    $shaTestScript = Join-Path $scriptDir "scripts/windows/test-sha-comparison.ps1"
     if (-not (Test-Path $shaTestScript)) {
         Write-Host "SHA comparison test script not found: $shaTestScript" -ForegroundColor Red
         Pop-Location

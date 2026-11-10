@@ -6,8 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"os/exec"
-	"runtime"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -40,8 +38,11 @@ func (g *GUIApp) performPIVSign(win fyne.Window, challenge string, appendStatus 
 	appendStatus("Signing challenge with YubiKey (PIV)...")
 
 	cards, err := piv.Cards()
-	if err != nil || len(cards) == 0 {
-		return "", fmt.Errorf("no smart cards found: %v", err)
+	if err != nil {
+		return "", fmt.Errorf("failed to enumerate smart cards: %w", err)
+	}
+	if len(cards) == 0 {
+		return "", fmt.Errorf("no smart cards found")
 	}
 
 	var yk *piv.YubiKey
@@ -56,29 +57,7 @@ func (g *GUIApp) performPIVSign(win fyne.Window, challenge string, appendStatus 
 	err = ykErr
 
 	if err != nil {
-		killChan := make(chan bool)
-		fyne.Do(func() {
-			dialog.ShowConfirm("PIV Error", "Failed to open YubiKey (outstanding connections). Force kill conflicting background processes?", func(b bool) {
-				killChan <- b
-			}, win)
-		})
-
-		if <-killChan {
-			if runtime.GOOS == "windows" {
-				exec.Command("taskkill", "/IM", "scardsvr.exe", "/F").Run()
-				exec.Command("taskkill", "/IM", "gpg-agent.exe", "/F").Run()
-				exec.Command("net", "start", "scardsvr").Run()
-			} else {
-				exec.Command("killall", "gpg-agent").Run()
-			}
-			time.Sleep(2 * time.Second)
-			yk, ykErr = piv.Open(cards[0])
-			err = ykErr
-		}
-
-		if err != nil {
-			return "", fmt.Errorf("failed to open YubiKey: %v", err)
-		}
+		return "", fmt.Errorf("failed to open YubiKey: %w; check the smart-card service and close conflicting card sessions before retrying", err)
 	}
 	defer yk.Close()
 
