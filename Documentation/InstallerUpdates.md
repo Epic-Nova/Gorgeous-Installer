@@ -9,15 +9,14 @@ The Gorgeous Installer supports self-updating. Because the installer functions b
 
 ## How to Bump the Installer Version
 
-The installer version is managed by the `build.sh` script.
+The host build script generates the installer's version metadata: `build.ps1` on Windows and `build.sh` on Linux. The publisher's rebuild action updates the version inputs for the host before invoking that script.
 
-1. Open `build.sh`.
-2. Locate the line near the top:
-   ```bash
-   VERSION="1.0.0"
-   ```
-3. Update this version number to your desired new version (e.g., `"1.0.1"`).
-4. Run `./build.sh`. This process will compile the new binaries into the `build/` folder and generate the internal `buildinfo.go` file used to declare the running version.
+| Host | Version input |
+| --- | --- |
+| Linux | `VERSION="1.0.0"` in `build.sh` |
+| Windows | Product version in `winres.json`; fixed Windows resource versions must stay numeric, while the display product version can identify a prerelease |
+
+Update the input or use the publisher's version/rebuild action, then run `./build.sh` on Linux or `.\build.ps1` on Windows. The script compiles into `build/` and generates `internal/buildinfo/buildinfo.go`. Direct Go builds reuse the last generated metadata.
 
 ## How to Publish Updates
 
@@ -29,15 +28,18 @@ The installer version is managed by the `build.sh` script.
 6. Click **Sign & Publish**.
 
 > [!IMPORTANT]
-> When publishing a **Binary Update**, the publisher will specifically ZIP the contents of the local `build/` directory. Ensure you have successfully run `./build.sh` prior to publishing so that your newest compiled executables are included!
+> When publishing a **Binary Update**, the publisher ZIPs the contents of the local `build/` directory. Run the host build script first so that the intended executables and metadata are included. Windows publishing does not require a Linux binary, Bash or an external ZIP utility.
 
 ## How Clients Receive Updates
 
-- When the installer launches, it checks the API (`GET /api/v1/installer/update-check`) to see if its specific track has a newer version than its current `buildinfo.Version`.
+- When network access has been explicitly enabled, the installer checks the API (`GET /api/v1/installer/update-check`) for its update track. Offline mode overrides network consent.
 - If an update is available, a toast notification appears.
 - When clicked, the user can review the Release Notes and start the update.
-- **Binary Updates** download the zip, locate the correct executable for the host OS, and silently swap the running executable via a background shell script before restarting.
-- **Source Updates** download the zip and directly overwrite the local `.go` source files in the plugin directory.
+- Both tracks require HTTPS, a matching SHA-256 digest and a release signature verified against the configured trust key before applying downloaded contents.
+- **Binary Updates** locate the host executable in a private staging directory. Windows uses a hidden PID-aware helper, preserves the old executable for rollback and records failures before relaunch. Linux retains its shell handoff in the update's private directory.
+- **Source Updates** locate the `gorgeous-installer` module from the executable/working-directory ancestry and update that source tree, rather than assuming the launcher's current directory is the plugin directory. They do not rebuild the currently running executable.
+
+See [Windows workflows](Windows.md) for installation, uninstall and native regression checks. Trust-key provisioning and publishing to the production service are separate operator actions.
 
 > [!NOTE]
 > If **Developer Mode** is currently enabled and the installer is running from a local codebase (Source mode), the installer will **never** check for Source Updates. This ensures that any local modifications you are making to the installer's source code are not accidentally overwritten.

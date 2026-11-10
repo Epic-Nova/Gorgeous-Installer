@@ -11,7 +11,7 @@ import (
 
 // GUIApp represents the GUI wrapper when CGO is disabled.
 type GUIApp struct {
-	config *config.Config
+	config      *config.Config
 	ProjectPath string
 }
 

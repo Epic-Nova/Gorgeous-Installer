@@ -14,6 +14,8 @@
 
 [Get started](Documentation/QUICKSTART.md) · [Example packs](Documentation/EXAMPLES.md) · [Report an issue](https://github.com/Epic-Nova/Gorgeous-Installer/issues/new/choose) · [Gorgeous Core](https://github.com/Epic-Nova/Gorgeous-Core)
 
+[Windows installation and workflows](Documentation/Windows.md)
+
 </div>
 
 ---
